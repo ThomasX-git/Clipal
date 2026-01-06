@@ -124,6 +124,13 @@ curl -fsS http://127.0.0.1:3333/health
 tail -n 200 ~/.clipal/logs/clipal-$(date +%F).log
 ```
 
+如果你在 `com.lansespirit.clipal.plist` 里额外配置了：
+
+- `StandardOutPath`（stdout）
+- `StandardErrorPath`（stderr）
+
+那么进程崩溃/panic 堆栈等“非正常退出”信息通常只会出现在 `stderr` 文件里（比按天滚动的 `clipal-YYYY-MM-DD.log` 更关键）。
+
 ## 6. 常见问题
 
 - **启动后发现“有请求但我没打开 Claude Code”**：通常是 VS Code/Qoder 的 Claude Code 扩展后台进程在重试；可用 `lsof -nP -iTCP:3333` 定位。

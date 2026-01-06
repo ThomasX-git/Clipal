@@ -123,3 +123,34 @@ func TestTimeoutDoesNotPermanentlyDisableNotifications(t *testing.T) {
 		t.Fatalf("expected sender to be called at least twice, got %d", got)
 	}
 }
+
+func TestSenderPanicDoesNotCrashProcess(t *testing.T) {
+	oldSendTimeout := sendTimeout
+	sendTimeout = 10 * time.Millisecond
+	defer func() { sendTimeout = oldSendTimeout }()
+
+	var once sync.Once
+	called := make(chan struct{})
+	sender := func(title, message string, icon any) error {
+		once.Do(func() { close(called) })
+		panic("boom")
+	}
+
+	ps := true
+	cfg := config.NotificationsConfig{
+		Enabled:        true,
+		MinLevel:       config.LogLevelError,
+		ProviderSwitch: &ps,
+	}
+
+	ConfigureWithSender(cfg, sender)
+	defer Shutdown()
+
+	LogHook("ERROR", "test error")
+
+	select {
+	case <-called:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("expected sender to be called")
+	}
+}

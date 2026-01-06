@@ -103,7 +103,14 @@ func (l *Logger) log(level Level, levelStr string, format string, args ...interf
 	h := l.hook
 	l.hookMu.RUnlock()
 	if h != nil {
-		h(levelStr, message)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Fprintf(os.Stderr, "clipal: log hook panicked: %v\n", r)
+				}
+			}()
+			h(levelStr, message)
+		}()
 	}
 }
 

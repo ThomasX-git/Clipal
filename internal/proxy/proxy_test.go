@@ -2,8 +2,9 @@ package proxy
 
 import (
 	"bytes"
-	"crypto/tls"
+	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net/http"
@@ -520,6 +521,69 @@ func TestForwardWithFailover_ReactivateAfterTTL(t *testing.T) {
 	}
 	if rr.Result().StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want %d", rr.Result().StatusCode, http.StatusOK)
+	}
+}
+
+func TestForwardWithFailover_403GzipBodyDecodedAndRetriesNextProvider(t *testing.T) {
+	t.Parallel()
+
+	wantBody := `{"error":{"message":"账户余额不足","type":"permission_error","param":null,"code":null}}`
+
+	var callsP1 int
+	var callsP2 int
+
+	rt := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Host {
+		case "p1":
+			callsP1++
+			var buf bytes.Buffer
+			gz := gzip.NewWriter(&buf)
+			_, _ = gz.Write([]byte(wantBody))
+			_ = gz.Close()
+			h := make(http.Header)
+			h.Set("Content-Type", "application/json")
+			h.Set("Content-Encoding", "gzip")
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Header:     h,
+				Body:       io.NopCloser(bytes.NewReader(buf.Bytes())),
+			}, nil
+		case "p2":
+			callsP2++
+			return newResponse(http.StatusOK, nil, "ok"), nil
+		default:
+			return nil, errors.New("unexpected host")
+		}
+	})
+
+	cp := newClientProxy(ClientCodex, []config.Provider{
+		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
+		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
+	}, time.Hour, 0)
+	cp.httpClient.Transport = rt
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://proxy/codex/v1/test", bytes.NewReader([]byte(`{"x":1}`)))
+	cp.forwardWithFailover(rr, req, "/v1/test")
+
+	res := rr.Result()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d", res.StatusCode, http.StatusOK)
+	}
+	if got := rr.Body.String(); got != "ok" {
+		t.Fatalf("body: got %q want %q", got, "ok")
+	}
+	if callsP1 != 1 || callsP2 != 1 {
+		t.Fatalf("unexpected upstream call counts: p1=%d p2=%d", callsP1, callsP2)
+	}
+	if !cp.isDeactivated(0) {
+		t.Fatalf("expected provider 0 to be deactivated")
+	}
+	if got := cp.deactivated[0].message; got == "" || !strings.Contains(got, "账户余额不足") {
+		t.Fatalf("expected decoded deactivation message, got %q", got)
+	}
+	if strings.Contains(cp.deactivated[0].message, "\x1f\x8b") {
+		t.Fatalf("expected deactivation message to be decoded, got gzip bytes")
 	}
 }
 

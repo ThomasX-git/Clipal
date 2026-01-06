@@ -52,6 +52,20 @@ func Configure(cfg config.NotificationsConfig) {
 	ConfigureWithSender(cfg, beeep.Notify)
 }
 
+func safeSender(sender func(title, message string, icon any) error) func(title, message string, icon any) (err error) {
+	if sender == nil {
+		return nil
+	}
+	return func(title, message string, icon any) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("notification sender panicked: %v", r)
+			}
+		}()
+		return sender(title, message, icon)
+	}
+}
+
 func ConfigureWithSender(cfg config.NotificationsConfig, sender func(title, message string, icon any) error) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -78,7 +92,7 @@ func ConfigureWithSender(cfg config.NotificationsConfig, sender func(title, mess
 		enabled:        true,
 		minLevel:       minLevel,
 		providerSwitch: providerSwitch,
-		send:           sender,
+		send:           safeSender(sender),
 		ch:             make(chan event, queueCapacity),
 		stop:           make(chan struct{}),
 		done:           make(chan struct{}),

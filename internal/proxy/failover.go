@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -45,6 +47,21 @@ func stopTimer(t *time.Timer) {
 		return
 	}
 	t.Stop()
+}
+
+func nextProviderName(cp *ClientProxy, fromIndex int) (idx int, name string) {
+	idx = cp.nextActiveIndex(fromIndex)
+	if idx == fromIndex {
+		return idx, ""
+	}
+	if idx < 0 || idx >= len(cp.providers) {
+		return idx, ""
+	}
+	n := strings.TrimSpace(cp.providers[idx].Name)
+	if n == "" {
+		return idx, ""
+	}
+	return idx, n
 }
 
 // forwardWithFailover forwards the request with automatic failover.
@@ -129,10 +146,15 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 				return
 			}
 			cancelAttempt(nil)
-			logger.Warn("[%s] %s failed: %v, switching to next provider", cp.clientType, provider.Name, err)
+			nextIndex, nextName := nextProviderName(cp, index)
+			if nextName != "" {
+				logger.Warn("[%s] %s failed (network): %v; trying next=%s", cp.clientType, provider.Name, err, nextName)
+			} else {
+				logger.Warn("[%s] %s failed (network): %v; trying next provider", cp.clientType, provider.Name, err)
+			}
 			lastSwitchReason = "network"
 			lastSwitchStatus = 0
-			cp.setCurrentIndex(cp.nextActiveIndex(index))
+			cp.setCurrentIndex(nextIndex)
 			continue
 		}
 
@@ -142,18 +164,27 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 			cancelAttempt(nil)
 			lastSwitchReason = reason
 			lastSwitchStatus = resp.StatusCode
+			nextIndex, nextName := nextProviderName(cp, index)
 			switch action {
 			case failureDeactivateAndRetryNext:
 				cp.deactivateFor(index, reason, resp.StatusCode, msg, cp.reactivateAfter)
-				logger.Error("[%s] %s deactivated (%s): %d %s", cp.clientType, provider.Name, reason, resp.StatusCode, msg)
+				if nextName != "" {
+					logger.Error("[%s] %s deactivated (%s): %d %s; trying next=%s", cp.clientType, provider.Name, reason, resp.StatusCode, msg, nextName)
+				} else {
+					logger.Error("[%s] %s deactivated (%s): %d %s; trying next provider", cp.clientType, provider.Name, reason, resp.StatusCode, msg)
+				}
 			case failureRetryNext:
 				if cooldown > 0 {
 					cp.deactivateFor(index, reason, resp.StatusCode, msg, cooldown)
 					logger.Warn("[%s] %s cooling down for %s (%s): %d %s", cp.clientType, provider.Name, cooldown, reason, resp.StatusCode, msg)
 				}
-				logger.Warn("[%s] %s failed (%s): %d %s, switching to next provider", cp.clientType, provider.Name, reason, resp.StatusCode, msg)
+				if nextName != "" {
+					logger.Warn("[%s] %s failed (%s): %d %s; trying next=%s", cp.clientType, provider.Name, reason, resp.StatusCode, msg, nextName)
+				} else {
+					logger.Warn("[%s] %s failed (%s): %d %s; trying next provider", cp.clientType, provider.Name, reason, resp.StatusCode, msg)
+				}
 			}
-			cp.setCurrentIndex(cp.nextActiveIndex(index))
+			cp.setCurrentIndex(nextIndex)
 			continue
 		}
 
@@ -177,6 +208,7 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 				// Legitimately empty body; pass through as-is.
 				cp.setCurrentIndex(index)
 				if attempted > 1 && originProvider != "" && originProvider != provider.Name {
+					logger.Info("[%s] provider switched: %s -> %s (%s %d)", cp.clientType, originProvider, provider.Name, lastSwitchReason, lastSwitchStatus)
 					notify.ProviderSwitched(string(cp.clientType), originProvider, provider.Name, lastSwitchReason, lastSwitchStatus)
 				}
 				copyHeaders(w.Header(), resp.Header)
@@ -212,6 +244,7 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 		// Update current index to this working provider (we've got a response body).
 		cp.setCurrentIndex(index)
 		if attempted > 1 && originProvider != "" && originProvider != provider.Name {
+			logger.Info("[%s] provider switched: %s -> %s (%s %d)", cp.clientType, originProvider, provider.Name, lastSwitchReason, lastSwitchStatus)
 			notify.ProviderSwitched(string(cp.clientType), originProvider, provider.Name, lastSwitchReason, lastSwitchStatus)
 		}
 
@@ -352,36 +385,56 @@ func (cp *ClientProxy) forwardCountTokensWithFailover(w http.ResponseWriter, req
 				return
 			}
 			cancelAttempt(nil)
-			logger.Warn("[%s] %s failed (count_tokens): %v, trying next provider", cp.clientType, provider.Name, err)
-			cp.setCountTokensIndex(cp.nextActiveIndex(index))
+			nextIndex, nextName := nextProviderName(cp, index)
+			if nextName != "" {
+				logger.Warn("[%s] %s failed (count_tokens network): %v; trying next=%s", cp.clientType, provider.Name, err, nextName)
+			} else {
+				logger.Warn("[%s] %s failed (count_tokens network): %v; trying next provider", cp.clientType, provider.Name, err)
+			}
+			cp.setCountTokensIndex(nextIndex)
 			continue
 		}
 
 		// For count_tokens, only treat auth/billing failures as hard signals that can deactivate a provider.
 		// Other transient failures should not impact the main conversation stickiness (cp.currentIndex).
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			msg := readAndTruncate(resp.Body, 2048)
+			msg := readAndTruncateResponse(resp, 2048)
 			resp.Body.Close()
 			cp.deactivateFor(index, "auth", resp.StatusCode, msg, cp.reactivateAfter)
-			cp.setCountTokensIndex(cp.nextActiveIndex(index))
-			logger.Error("[%s] %s deactivated (count_tokens auth): %d %s", cp.clientType, provider.Name, resp.StatusCode, msg)
+			nextIndex, nextName := nextProviderName(cp, index)
+			cp.setCountTokensIndex(nextIndex)
+			if nextName != "" {
+				logger.Error("[%s] %s deactivated (count_tokens auth): %d %s; trying next=%s", cp.clientType, provider.Name, resp.StatusCode, msg, nextName)
+			} else {
+				logger.Error("[%s] %s deactivated (count_tokens auth): %d %s; trying next provider", cp.clientType, provider.Name, resp.StatusCode, msg)
+			}
 			cancelAttempt(nil)
 			continue
 		}
 		if resp.StatusCode == http.StatusPaymentRequired {
-			msg := readAndTruncate(resp.Body, 2048)
+			msg := readAndTruncateResponse(resp, 2048)
 			resp.Body.Close()
 			cp.deactivateFor(index, "billing", resp.StatusCode, msg, cp.reactivateAfter)
-			cp.setCountTokensIndex(cp.nextActiveIndex(index))
-			logger.Error("[%s] %s deactivated (count_tokens billing): %d %s", cp.clientType, provider.Name, resp.StatusCode, msg)
+			nextIndex, nextName := nextProviderName(cp, index)
+			cp.setCountTokensIndex(nextIndex)
+			if nextName != "" {
+				logger.Error("[%s] %s deactivated (count_tokens billing): %d %s; trying next=%s", cp.clientType, provider.Name, resp.StatusCode, msg, nextName)
+			} else {
+				logger.Error("[%s] %s deactivated (count_tokens billing): %d %s; trying next provider", cp.clientType, provider.Name, resp.StatusCode, msg)
+			}
 			cancelAttempt(nil)
 			continue
 		}
 		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
-			msg := readAndTruncate(resp.Body, 2048)
+			msg := readAndTruncateResponse(resp, 2048)
 			resp.Body.Close()
-			cp.setCountTokensIndex(cp.nextActiveIndex(index))
-			logger.Warn("[%s] %s failed (count_tokens): %d %s, trying next provider", cp.clientType, provider.Name, resp.StatusCode, msg)
+			nextIndex, nextName := nextProviderName(cp, index)
+			cp.setCountTokensIndex(nextIndex)
+			if nextName != "" {
+				logger.Warn("[%s] %s failed (count_tokens): %d %s; trying next=%s", cp.clientType, provider.Name, resp.StatusCode, msg, nextName)
+			} else {
+				logger.Warn("[%s] %s failed (count_tokens): %d %s; trying next provider", cp.clientType, provider.Name, resp.StatusCode, msg)
+			}
 			cancelAttempt(nil)
 			continue
 		}
@@ -721,12 +774,12 @@ func classifyUpstreamFailure(resp *http.Response) (action failureAction, reason 
 
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return failureDeactivateAndRetryNext, "auth", readAndTruncate(resp.Body, 2048), 0
+		return failureDeactivateAndRetryNext, "auth", readAndTruncateResponse(resp, 2048), 0
 	case http.StatusPaymentRequired:
-		return failureDeactivateAndRetryNext, "billing", readAndTruncate(resp.Body, 2048), 0
+		return failureDeactivateAndRetryNext, "billing", readAndTruncateResponse(resp, 2048), 0
 	case http.StatusTooManyRequests:
-		body, truncated := readBodyBytes(resp.Body, 32*1024)
-		snippet := string(body)
+		body, truncated := readResponseBodyBytes(resp, 32*1024)
+		snippet := sanitizeLogString(string(body))
 		if truncated {
 			snippet += "..."
 		}
@@ -743,7 +796,7 @@ func classifyUpstreamFailure(resp *http.Response) (action failureAction, reason 
 	default:
 		if shouldRetry(status) {
 			cooldown = retryAfterDuration(resp.Header)
-			return failureRetryNext, "server", readAndTruncate(resp.Body, 2048), cooldown
+			return failureRetryNext, "server", readAndTruncateResponse(resp, 2048), cooldown
 		}
 		return failureReturnToClient, "", "", 0
 	}
@@ -895,29 +948,65 @@ func parseDurationHint(v string) (time.Duration, bool) {
 	return 0, false
 }
 
-func readBodyBytes(r io.Reader, maxBytes int64) (data []byte, truncated bool) {
-	if maxBytes <= 0 {
-		_, _ = io.Copy(io.Discard, r)
+func sanitizeLogString(s string) string {
+	if s == "" {
+		return ""
+	}
+	s = strings.ReplaceAll(s, "\x00", "")
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	s = strings.ReplaceAll(s, "\r", "\\r")
+	s = strings.ReplaceAll(s, "\t", "\\t")
+	return s
+}
+
+func readResponseBodyBytes(resp *http.Response, maxBytes int64) (data []byte, truncated bool) {
+	if resp == nil || resp.Body == nil {
 		return nil, false
 	}
-	data, _ = io.ReadAll(io.LimitReader(r, maxBytes+1))
+	if maxBytes <= 0 {
+		_ = resp.Body.Close()
+		return nil, false
+	}
+
+	br := bufio.NewReader(resp.Body)
+	peek, _ := br.Peek(2)
+	enc := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding")))
+	isGzip := strings.Contains(enc, "gzip") || (len(peek) == 2 && peek[0] == 0x1f && peek[1] == 0x8b)
+
+	if isGzip {
+		if gz, err := gzip.NewReader(br); err == nil {
+			defer gz.Close()
+			data, _ = io.ReadAll(io.LimitReader(gz, maxBytes+1))
+			truncated = int64(len(data)) > maxBytes
+			if truncated {
+				data = data[:maxBytes]
+			}
+			// Best-effort drain to encourage connection reuse, but don't hang on huge bodies.
+			_, _ = io.Copy(io.Discard, io.LimitReader(gz, 512*1024))
+			return data, truncated
+		}
+	}
+
+	data, _ = io.ReadAll(io.LimitReader(br, maxBytes+1))
 	truncated = int64(len(data)) > maxBytes
 	if truncated {
 		data = data[:maxBytes]
 	}
-	_, _ = io.Copy(io.Discard, r)
+	_, _ = io.Copy(io.Discard, io.LimitReader(br, 512*1024))
 	return data, truncated
 }
 
-func readAndTruncate(r io.Reader, maxBytes int64) string {
-	if maxBytes <= 0 {
+func readAndTruncateResponse(resp *http.Response, maxBytes int64) string {
+	if maxBytes <= 0 || resp == nil {
 		return ""
 	}
-	data, truncated := readBodyBytes(r, maxBytes)
+	data, truncated := readResponseBodyBytes(resp, maxBytes)
+	out := sanitizeLogString(string(data))
 	if truncated {
-		return string(data) + "..."
+		return out + "..."
 	}
-	return string(data)
+	return out
 }
 
 func truncateString(s string, maxLen int) string {
