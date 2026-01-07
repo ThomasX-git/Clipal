@@ -67,6 +67,40 @@ log_retention_days: 7
 
 ### 5.2 创建“登录时启动”任务
 
+你可以用两种方式（二选一）：
+
+- **方式 A：使用内置命令（推荐）**：`clipal service install` 会通过 `schtasks.exe` 创建并运行“登录时启动”任务
+- **方式 B：手动在 UI 创建任务**：适合你想自定义更多任务参数的场景
+
+#### 方式 A：内置命令（推荐）
+
+```powershell
+# 安装并立即运行（任务名：Clipal）
+clipal.exe service install
+
+# 查看状态
+clipal.exe service status
+
+# 重启 / 停止 / 卸载
+clipal.exe service restart
+clipal.exe service stop
+clipal.exe service uninstall
+```
+
+如果你之前已经安装过、需要覆盖更新任务，用：
+
+```powershell
+clipal.exe service install --force
+```
+
+如果你的配置目录不在默认的 `%USERPROFILE%\\.clipal\\`，加上：
+
+```powershell
+clipal.exe service install --config-dir C:\\path\\to\\config
+```
+
+#### 方式 B：手动创建任务
+
 打开“任务计划程序” → “创建任务”：
 
 - 常规：勾选“使用最高权限运行”（如果你需要绑定低端口/写受限目录才需要）

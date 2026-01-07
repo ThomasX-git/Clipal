@@ -60,6 +60,40 @@ log_retention_days: 7
 
 ### 5.2 方式 B：systemd user service（推荐：无需 root）
 
+你可以用两种方式（二选一）：
+
+- **方式 B1：使用内置命令（推荐）**：`clipal service install` 会自动生成 unit 并通过 `systemctl --user` 启用/启动
+- **方式 B2：手动创建 unit**：适合你想完全自定义 unit 内容的场景
+
+#### 方式 B1：内置命令（推荐）
+
+```bash
+# 安装并启用开机自启（登录后），并立即启动
+clipal service install
+
+# 查看状态
+clipal service status
+
+# 重启 / 停止 / 卸载
+clipal service restart
+clipal service stop
+clipal service uninstall
+```
+
+如果你之前已经安装过、需要覆盖更新 unit，用：
+
+```bash
+clipal service install --force
+```
+
+如果你的配置目录不在默认的 `~/.clipal`，加上：
+
+```bash
+clipal service install --config-dir /path/to/config
+```
+
+#### 方式 B2：手动创建 unit
+
 创建 `~/.config/systemd/user/clipal.service`：
 
 ```ini

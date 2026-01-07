@@ -77,6 +77,41 @@ Default log dir: `~/.clipal/logs/` (daily files: `clipal-YYYY-MM-DD.log`).
 
 ### 5.2 Create a LaunchAgent
 
+You can pick one of the following:
+
+- **Option A (recommended): built-in command**: `clipal service install` generates the plist and loads it via `launchctl`
+- **Option B: manual plist**: for fully customized plist
+
+#### Option A: built-in command (recommended)
+
+```bash
+clipal service install
+clipal service status
+clipal service restart
+clipal service stop
+clipal service uninstall
+```
+
+If you already installed it and want to overwrite/update the plist:
+
+```bash
+clipal service install --force
+```
+
+If your config dir is not `~/.clipal`:
+
+```bash
+clipal service install --config-dir /path/to/config
+```
+
+Optional (separate stdout/stderr files for crash/panic diagnostics):
+
+```bash
+clipal service install --stdout ~/.clipal/logs/launchd.out --stderr ~/.clipal/logs/launchd.err
+```
+
+#### Option B: manual plist
+
 Create `~/Library/LaunchAgents/com.lansespirit.clipal.plist`:
 
 ```xml
@@ -128,4 +163,3 @@ tail -n 200 ~/.clipal/logs/clipal-$(date +%F).log
 
 - **“I see requests but I didn’t open Claude Code”**: often VS Code/Qoder extensions retry in the background; run `lsof -nP -iTCP:3333` to inspect.
 - **Security**: keep `listen_addr: 127.0.0.1` unless you really want LAN access; exposing upstream keys can be risky.
-

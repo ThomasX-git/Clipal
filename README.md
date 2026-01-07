@@ -220,6 +220,16 @@ clipal update --dry-run
 nohup clipal >/dev/null 2>&1 &
 ```
 
+For long-running background mode on boot/logon (launchd / systemd / Task Scheduler), you can use:
+
+```bash
+clipal service install
+clipal service status
+clipal service restart
+clipal service stop
+clipal service uninstall
+```
+
 For proper startup on boot (systemd / launchd / Task Scheduler), see:
 
 - [macOS](docs/en/macos.md)

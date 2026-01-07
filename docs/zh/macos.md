@@ -77,6 +77,46 @@ log_retention_days: 7
 
 ### 5.2 创建 LaunchAgent
 
+你可以用两种方式（二选一）：
+
+- **方式 A：使用内置命令（推荐）**：`clipal service install` 会自动生成 plist 并通过 `launchctl` 加载/启动
+- **方式 B：手动创建 plist**：适合你想完全自定义 plist 内容的场景
+
+#### 方式 A：内置命令（推荐）
+
+```bash
+# 安装并启动（会写入 ~/Library/LaunchAgents/com.lansespirit.clipal.plist）
+clipal service install
+
+# 查看状态
+clipal service status
+
+# 重启 / 停止 / 卸载
+clipal service restart
+clipal service stop
+clipal service uninstall
+```
+
+如果你之前已经安装过、需要覆盖更新 plist，用：
+
+```bash
+clipal service install --force
+```
+
+如果你的配置目录不在默认的 `~/.clipal`，加上：
+
+```bash
+clipal service install --config-dir /path/to/config
+```
+
+如需把 stdout/stderr 单独落盘（便于排查 panic/崩溃），可选：
+
+```bash
+clipal service install --stdout ~/.clipal/logs/launchd.out --stderr ~/.clipal/logs/launchd.err
+```
+
+#### 方式 B：手动创建 plist
+
 创建文件 `~/Library/LaunchAgents/com.lansespirit.clipal.plist`：
 
 ```xml

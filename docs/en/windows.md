@@ -67,6 +67,35 @@ Default log dir: `%USERPROFILE%\\.clipal\\logs\\`
 
 ### 5.2 Create a “Start at logon” task
 
+You can pick one of the following:
+
+- **Option A (recommended): built-in command**: `clipal.exe service install` creates a “Start at logon” task via `schtasks.exe`
+- **Option B: manual UI**: for customized task settings
+
+#### Option A: built-in command (recommended)
+
+```powershell
+clipal.exe service install
+clipal.exe service status
+clipal.exe service restart
+clipal.exe service stop
+clipal.exe service uninstall
+```
+
+If you already installed it and want to overwrite/update the task:
+
+```powershell
+clipal.exe service install --force
+```
+
+If your config dir is not `%USERPROFILE%\\.clipal\\`:
+
+```powershell
+clipal.exe service install --config-dir C:\\path\\to\\config
+```
+
+#### Option B: manual UI
+
 Task Scheduler → Create Task:
 
 - General: “Run with highest privileges” only if you need it

@@ -60,6 +60,35 @@ log_retention_days: 7
 
 ### 5.2 Option B: systemd user service (recommended; no root)
 
+You can pick one of the following:
+
+- **Option B1 (recommended): built-in command**: `clipal service install` generates the unit and enables it via `systemctl --user`
+- **Option B2: manual unit**: for fully customized unit
+
+#### Option B1: built-in command (recommended)
+
+```bash
+clipal service install
+clipal service status
+clipal service restart
+clipal service stop
+clipal service uninstall
+```
+
+If you already installed it and want to overwrite/update the unit:
+
+```bash
+clipal service install --force
+```
+
+If your config dir is not `~/.clipal`:
+
+```bash
+clipal service install --config-dir /path/to/config
+```
+
+#### Option B2: manual unit
+
 Create `~/.config/systemd/user/clipal.service`:
 
 ```ini
@@ -104,4 +133,3 @@ Logs:
 
 - Port in use: change `port` in `~/.clipal/config.yaml` or run with `--port 3334`
 - Security: keep `listen_addr: 127.0.0.1`
-

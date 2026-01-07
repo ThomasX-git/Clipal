@@ -165,7 +165,7 @@ curl -fsS -X POST \
   "http://127.0.0.1:$clipal_port/codex/test?x=1" \
   | "$PY" -c 'import json,sys; d=json.load(sys.stdin); assert d["path"]=="/test", d; assert d["query"]=="x=1", d; assert d["auth"]=="Bearer key2", d; assert d["body"]=="{\"hello\":\"world\"}", d; print("ok")'
 
-if ! grep -q "switching to next provider" "$tmpdir/clipal.log" 2>/dev/null; then
+if ! grep -Eq "trying next=|provider switched:" "$tmpdir/clipal.log" 2>/dev/null; then
   echo "expected failover log line not found in clipal.log" >&2
   echo "---- clipal.log ----" >&2
   tail -n 200 "$tmpdir/clipal.log" >&2 || true

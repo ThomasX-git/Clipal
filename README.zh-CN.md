@@ -288,6 +288,16 @@ clipal update --dry-run
 nohup clipal >/dev/null 2>&1 &
 ```
 
+如果你是“开机/登录后自动启动”的长期后台运行场景（launchd / systemd / 任务计划程序），推荐直接用：
+
+```bash
+clipal service install
+clipal service status
+clipal service restart
+clipal service stop
+clipal service uninstall
+```
+
 长期后台运行与开机自启（systemd / launchd / 任务计划程序）请看：
 
 - [macOS](docs/zh/macos.md)
