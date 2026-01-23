@@ -166,7 +166,7 @@
                         </div>
 
                         <div class="form-group">
-                            <label class="form-label">Upstream Idiie Timeout</label>
+                            <label class="form-label">Upstream Idle Timeout</label>
                             <input type="text" x-model="globalConfig.upstream_idle_timeout" class="form-input" required>
                             <div class="form-hint">e.g., 3m</div>
                         </div>
@@ -234,22 +234,22 @@
         <div x-show="activeTab === 'status'" class="tab-content" x-transition:enter="transition ease-out duration-200"
             x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0">
             <div class="card-grid">
-                <div class="card">
+                <div class="card" style="grid-column: 1 / -1;">
                     <div class="provider-header">
                         <h3 class="provider-name">System Info</h3>
                     </div>
-                    <div class="provider-details">
-                        <div class="detail-item">
-                            <span class="detail-label">Version</span>
-                            <span class="detail-value" x-text="status.version"></span>
+                    <div class="kv-grid">
+                        <div class="kv-item">
+                            <div class="kv-label">Version</div>
+                            <div class="kv-value" x-text="status.version"></div>
                         </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Uptime</span>
-                            <span class="detail-value" x-text="status.uptime"></span>
+                        <div class="kv-item">
+                            <div class="kv-label">Uptime</div>
+                            <div class="kv-value" x-text="status.uptime"></div>
                         </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Config Dir</span>
-                            <span class="detail-value" x-text="status.config_dir"></span>
+                        <div class="kv-item">
+                            <div class="kv-label">Config Dir</div>
+                            <div class="kv-value" x-text="status.config_dir"></div>
                         </div>
                     </div>
                 </div>
@@ -257,21 +257,23 @@
                 <template x-for="(client, name) in status.clients" :key="name">
                     <div class="card">
                         <div class="provider-header">
-                            <h3 class="provider-name" x-text="name" style="text-transform: capitalize;"></h3>
+                            <div>
+                                <h3 class="provider-name" x-text="clientLabel(name)"></h3>
+                                <div class="status-client-subtitle">
+                                    Current: <span class="mono-pill" x-text="client.current_provider || 'None'"></span>
+                                </div>
+                            </div>
+                            <div class="status-metrics">
+                                <span class="metric-pill" x-text="'Providers: ' + client.provider_count"></span>
+                                <span class="metric-pill"
+                                    x-text="'Enabled: ' + ((client.enabled_providers && client.enabled_providers.length) || 0)"></span>
+                            </div>
                         </div>
-                        <div class="provider-details">
-                            <div class="detail-item">
-                                <span class="detail-label">Total Providers</span>
-                                <span class="detail-value" x-text="client.provider_count"></span>
-                            </div>
-                            <div class="detail-item">
-                                <span class="detail-label">Active Providers</span>
-                                <span class="detail-value" x-text="client.enabled_providers.length"></span>
-                            </div>
-                            <div class="detail-item">
-                                <span class="detail-label">Current</span>
-                                <span class="detail-value" x-text="client.current_provider || 'None'"></span>
-                            </div>
+                        <div class="chips">
+                            <template x-for="p in (client.enabled_providers || [])" :key="p">
+                                <span class="chip" :class="p === client.current_provider ? 'chip-primary' : ''"
+                                    x-text="p"></span>
+                            </template>
                         </div>
                     </div>
                 </template>
