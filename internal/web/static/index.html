@@ -32,17 +32,25 @@
         </header>
 
         <!-- Navigation Tabs -->
-        <nav class="tabs">
-            <button @click="activeTab = 'providers'" :class="{'active': activeTab === 'providers'}" class="tab">
+        <nav class="tabs" role="tablist" aria-label="Sections">
+            <button id="tabbtn-providers" role="tab" :tabindex="activeTab === 'providers' ? 0 : -1"
+                :aria-selected="activeTab === 'providers'" aria-controls="tab-providers"
+                @click="activeTab = 'providers'" :class="{'active': activeTab === 'providers'}" class="tab">
                 Providers
             </button>
-            <button @click="activeTab = 'settings'" :class="{'active': activeTab === 'settings'}" class="tab">
+            <button id="tabbtn-settings" role="tab" :tabindex="activeTab === 'settings' ? 0 : -1"
+                :aria-selected="activeTab === 'settings'" aria-controls="tab-settings"
+                @click="activeTab = 'settings'" :class="{'active': activeTab === 'settings'}" class="tab">
                 Global Settings
             </button>
-            <button @click="activeTab = 'services'" :class="{'active': activeTab === 'services'}" class="tab">
+            <button id="tabbtn-services" role="tab" :tabindex="activeTab === 'services' ? 0 : -1"
+                :aria-selected="activeTab === 'services'" aria-controls="tab-services"
+                @click="activeTab = 'services'" :class="{'active': activeTab === 'services'}" class="tab">
                 Services
             </button>
-            <button @click="activeTab = 'status'" :class="{'active': activeTab === 'status'}" class="tab">
+            <button id="tabbtn-status" role="tab" :tabindex="activeTab === 'status' ? 0 : -1"
+                :aria-selected="activeTab === 'status'" aria-controls="tab-status"
+                @click="activeTab = 'status'" :class="{'active': activeTab === 'status'}" class="tab">
                 System Status
             </button>
         </nav>
@@ -55,7 +63,8 @@
         </div>
 
         <!-- Providers Tab -->
-        <div x-show="activeTab === 'providers'" x-transition:enter="transition ease-out duration-200"
+        <div id="tab-providers" role="tabpanel" aria-labelledby="tabbtn-providers" x-show="activeTab === 'providers'"
+            x-transition:enter="transition ease-out duration-200"
             x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0">
             <!-- Client Switcher -->
             <div class="client-switcher-container">
@@ -124,7 +133,8 @@
         </div>
 
         <!-- Settings Tab -->
-        <div x-show="activeTab === 'settings'" class="tab-content" x-transition:enter="transition ease-out duration-200"
+        <div id="tab-settings" role="tabpanel" aria-labelledby="tabbtn-settings" x-show="activeTab === 'settings'"
+            class="tab-content" x-transition:enter="transition ease-out duration-200"
             x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0">
             <form @submit.prevent="saveGlobalConfig()">
                 <div class="form-section">
@@ -234,7 +244,8 @@
         </div>
 
         <!-- Services Tab -->
-        <div x-show="activeTab === 'services'" class="tab-content" x-transition:enter="transition ease-out duration-200"
+        <div id="tab-services" role="tabpanel" aria-labelledby="tabbtn-services" x-show="activeTab === 'services'"
+            class="tab-content" x-transition:enter="transition ease-out duration-200"
             x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0">
             <div class="card-grid">
                 <div class="card" style="grid-column: 1 / -1;">
@@ -374,7 +385,8 @@
         </div>
 
         <!-- Status Tab -->
-        <div x-show="activeTab === 'status'" class="tab-content" x-transition:enter="transition ease-out duration-200"
+        <div id="tab-status" role="tabpanel" aria-labelledby="tabbtn-status" x-show="activeTab === 'status'"
+            class="tab-content" x-transition:enter="transition ease-out duration-200"
             x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0">
             <div class="card-grid">
                 <div class="card" style="grid-column: 1 / -1;">
@@ -426,11 +438,14 @@
 
     <!-- Modals -->
     <div class="modal-backdrop" :class="{'show': showAddProviderModal || showEditProviderModal}"
+        @keydown.escape.window="closeModals()"
         @click.self="closeModals()">
-        <div class="modal">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
             <div class="modal-header">
-                <h2 x-text="showEditProviderModal ? 'Edit Provider' : 'Add Provider'"></h2>
-                <button @click="closeModals()" class="icon-btn" style="font-size: 18px;">&times;</button>
+                <h2 id="modal-title" x-text="showEditProviderModal ? 'Edit Provider' : 'Add Provider'"></h2>
+                <button @click="closeModals()" class="icon-btn" style="font-size: 18px;" aria-label="Close modal">
+                    &times;
+                </button>
             </div>
             <form @submit.prevent="saveProvider()">
                 <div class="modal-body">
