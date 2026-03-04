@@ -160,6 +160,29 @@ func TestAddForwardedHeaders(t *testing.T) {
 	}
 }
 
+func TestIsUpstreamIdleTimeout(t *testing.T) {
+	t.Parallel()
+
+	attemptCtx, cancelAttempt := context.WithCancelCause(context.Background())
+	cancelAttempt(errUpstreamIdleTimeout)
+
+	if !isUpstreamIdleTimeout(attemptCtx, nil) {
+		t.Fatalf("expected idle timeout via context.Cause with nil err")
+	}
+	if !isUpstreamIdleTimeout(attemptCtx, attemptCtx.Err()) {
+		t.Fatalf("expected idle timeout via attemptCtx.Err()")
+	}
+	if !isUpstreamIdleTimeout(attemptCtx, errUpstreamIdleTimeout) {
+		t.Fatalf("expected idle timeout via sentinel error")
+	}
+
+	otherCtx, cancelOther := context.WithCancelCause(context.Background())
+	cancelOther(nil)
+	if isUpstreamIdleTimeout(otherCtx, nil) {
+		t.Fatalf("did not expect idle timeout for generic cancellation")
+	}
+}
+
 func TestHandleRequest_MaxRequestBodyBytes(t *testing.T) {
 	t.Parallel()
 

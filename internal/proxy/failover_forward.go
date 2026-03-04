@@ -206,7 +206,7 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 
 		// Failed before committing headers (e.g. idle timeout during first byte read).
 		// Failover to next provider.
-		if isUpstreamIdleTimeout(attemptCtx, nil) {
+		if isUpstreamIdleTimeout(attemptCtx, attemptCtx.Err()) {
 			logger.Warn("[%s] %s no body bytes for %s, switching to next provider", cp.clientType, provider.Name, cp.upstreamIdle)
 			lastSwitchReason = "idle_timeout"
 			lastSwitchStatus = 0
@@ -397,7 +397,7 @@ func (cp *ClientProxy) forwardCountTokensWithFailover(w http.ResponseWriter, req
 			return
 		}
 		logger.Warn("[%s] %s response read failed before body (count_tokens), trying next provider", cp.clientType, provider.Name)
-		if isUpstreamIdleTimeout(attemptCtx, nil) {
+		if isUpstreamIdleTimeout(attemptCtx, attemptCtx.Err()) {
 			cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "idle_timeout")
 		} else {
 			cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "network")
