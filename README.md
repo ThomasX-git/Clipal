@@ -86,10 +86,11 @@ port: 3333                # default: 3333
 log_level: "info"         # debug/info/warn/error
 reactivate_after: "1h"    # default: 1h; set to 0 to disable auto-deactivate
 upstream_idle_timeout: "3m" # default: 3m; set to 0 to disable (no body bytes received)
+response_header_timeout: "2m" # default: 2m; set to 0 to disable (wait for upstream headers)
 max_request_body_bytes: 33554432  # default: 32 MiB (request body is buffered for retries)
 log_dir: ""               # default: <config-dir>/logs
 log_retention_days: 7     # default: 7
-log_stdout: true          # default: true
+log_stdout: false         # recommended for long-running background service; runtime default is true
 ignore_count_tokens_failover: false # Claude Code: don't failover main chat on count_tokens failures
 
 # Circuit breaker: avoid repeatedly calling unhealthy providers
@@ -297,18 +298,20 @@ export GEMINI_API_BASE="http://localhost:3333/gemini"
 
 ## Logging
 
-By default, Clipal logs to stdout and to a daily-rotated log file (retained for 7 days by default).
+Clipal supports daily-rotated file logging and optional stdout logging. For long-running background service mode, we recommend keeping the rotated file logs and disabling stdout logging.
 
 - Default log dir: `<config-dir>/logs` (e.g. `~/.clipal/logs`)
 - Log file: `clipal-YYYY-MM-DD.log`
 
-For quiet background operation, set in `~/.clipal/config.yaml`:
+Recommended `~/.clipal/config.yaml` for background service mode:
 
 ```yaml
 log_stdout: false
 log_retention_days: 7
 # log_dir: ""  # empty means ~/.clipal/logs by default
 ```
+
+If `log_stdout: true` is combined with launchd/systemd stdout redirection, you may get duplicate logs and non-rotated stdout log files.
 
 ## Project layout
 

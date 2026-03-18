@@ -113,7 +113,7 @@ clipal service install --force
 clipal service install --config-dir /path/to/config
 ```
 
-如需把 stdout/stderr 单独落盘（便于排查 panic/崩溃），可选：
+如需把 stdout/stderr 单独落盘（便于排查 panic/崩溃），可选。此时仍建议保持 `log_stdout: false`，否则常规日志会同时写入 Clipal 的轮转日志和 launchd 的 stdout 文件，形成重复：
 
 ```bash
 clipal service install --stdout ~/.clipal/logs/launchd.out --stderr ~/.clipal/logs/launchd.err

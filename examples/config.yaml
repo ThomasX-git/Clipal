@@ -8,6 +8,9 @@ reactivate_after: 1h # set to 0 to disable temporary deactivation
 # Cancel an upstream attempt if no response body bytes are received for this long.
 # Useful for SSE streams that can hang after headers. Set to 0 to disable.
 upstream_idle_timeout: 3m
+# How long to wait for the upstream to return response headers after the request is written.
+# Set to 0 to disable.
+response_header_timeout: 2m
 # Max request body size in bytes (clipal buffers request bodies for retries).
 # Default: 33554432 (32 MiB)
 # max_request_body_bytes: 33554432
@@ -15,7 +18,7 @@ upstream_idle_timeout: 3m
 # Default: <config-dir>/logs (e.g. ~/.clipal/logs)
 # log_dir: ""
 log_retention_days: 7
-log_stdout: true
+log_stdout: false # recommended for long-running background service; runtime default is true
 
 # Claude Code: if true, /v1/messages/count_tokens failures won't affect the main conversation provider.
 ignore_count_tokens_failover: false

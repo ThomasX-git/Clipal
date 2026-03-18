@@ -106,7 +106,7 @@ If your config dir is not `~/.clipal`:
 clipal service install --config-dir /path/to/config
 ```
 
-Optional (separate stdout/stderr files for crash/panic diagnostics):
+Optional (separate stdout/stderr files for crash/panic diagnostics). Keep `log_stdout: false` if you use this, otherwise you will duplicate normal logs into both Clipal's rotated files and the launchd stdout file:
 
 ```bash
 clipal service install --stdout ~/.clipal/logs/launchd.out --stderr ~/.clipal/logs/launchd.err

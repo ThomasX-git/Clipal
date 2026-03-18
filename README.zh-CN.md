@@ -110,10 +110,11 @@ port: 3333              # 服务端口，默认 3333
 log_level: info         # debug | info | warn | error
 reactivate_after: 1h    # Provider 自动恢复间隔，默认 1h（解除临时禁用）
 upstream_idle_timeout: 3m # 上游响应 body 长时间无字节则中断该尝试并切换（默认 3m；设为 0 可禁用）
+response_header_timeout: 2m # 等待上游返回响应头的超时（默认 2m；设为 0 可禁用）
 max_request_body_bytes: 33554432 # 请求体大小上限（字节），默认 32 MiB
 log_dir: ""             # 日志目录（默认：<config-dir>/logs，例如 ~/.clipal/logs）
 log_retention_days: 7   # 日志保留天数（默认 7）
-log_stdout: true        # 是否同时输出到 stdout（后台静默运行可设为 false）
+log_stdout: false       # 推荐长期后台运行时关闭；运行时默认值仍为 true
 ignore_count_tokens_failover: false # Claude Code: count_tokens 失败不影响主会话 provider（保持 context cache）
 
 # 熔断器（Circuit Breaker）：避免持续向不健康 Provider 发送请求
@@ -162,6 +163,7 @@ providers:
 | `log_level` | string | 否 | 日志级别：debug/info/warn/error，默认 info |
 | `reactivate_after` | duration | 否 | Provider 自动恢复间隔（如 `1h`/`30m`），默认 `1h`；设为 `0` 表示不对鉴权/额度错误执行临时禁用 |
 | `upstream_idle_timeout` | duration | 否 | 上游响应 body 长时间无字节则中断该尝试并切换到下一个 provider，默认 `3m`；设为 `0` 可禁用 |
+| `response_header_timeout` | duration | 否 | 等待上游返回响应头的超时（默认 `2m`）；设为 `0` 可禁用 |
 | `max_request_body_bytes` | int | 否 | 请求体大小上限（字节）。clipal 会缓存请求体以支持重试，默认 `33554432`（32 MiB） |
 | `log_dir` | string | 否 | 日志目录（默认：`<config-dir>/logs`） |
 | `log_retention_days` | int | 否 | 日志保留天数（默认 7） |
@@ -370,18 +372,20 @@ export GEMINI_API_BASE="http://localhost:3333/gemini"
 
 ## 日志输出
 
-clipal 默认同时输出到 stdout 与日志目录（按天滚动，默认保留 7 天）。
+clipal 支持按天滚动的文件日志，并可选同时输出到 stdout。对于长期后台运行，推荐保留轮转日志并关闭 `log_stdout`。
 
 - 默认日志目录：`<config-dir>/logs`（例如 `~/.clipal/logs`）
 - 日志文件：`clipal-YYYY-MM-DD.log`
 
-后台静默运行建议在 `~/.clipal/config.yaml` 设置：
+后台服务模式建议在 `~/.clipal/config.yaml` 设置：
 
 ```yaml
 log_stdout: false
 log_retention_days: 7
 # log_dir: ""  # 留空则默认 ~/.clipal/logs
 ```
+
+如果 `log_stdout: true` 再叠加 launchd/systemd 的 stdout 重定向，通常会出现重复日志，而且 stdout 文件本身不会按 Clipal 的轮转策略清理。
 
 ```
 [INFO]  2024-01-01 12:00:00 clipal starting on :3333
