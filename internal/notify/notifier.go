@@ -358,7 +358,9 @@ func (n *Notifier) loop() {
 			inFlight = true
 			inFlightDone = done
 			go func() {
-				done <- n.send(ev.title, ev.message, nil)
+				// beeep rejects a nil icon argument on all desktop platforms.
+				// Pass an empty string so the backend can use its own fallback path.
+				done <- n.send(ev.title, ev.message, "")
 			}()
 
 			select {

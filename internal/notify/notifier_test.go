@@ -154,3 +154,36 @@ func TestSenderPanicDoesNotCrashProcess(t *testing.T) {
 		t.Fatalf("expected sender to be called")
 	}
 }
+
+func TestNotifierPassesEmptyStringIcon(t *testing.T) {
+	ps := true
+	cfg := config.NotificationsConfig{
+		Enabled:        true,
+		MinLevel:       config.LogLevelError,
+		ProviderSwitch: &ps,
+	}
+
+	got := make(chan any, 1)
+	sender := func(title, message string, icon any) error {
+		got <- icon
+		return nil
+	}
+
+	ConfigureWithSender(cfg, sender)
+	defer Shutdown()
+
+	LogHook("ERROR", "test error")
+
+	select {
+	case icon := <-got:
+		s, ok := icon.(string)
+		if !ok {
+			t.Fatalf("expected string icon, got %T", icon)
+		}
+		if s != "" {
+			t.Fatalf("expected empty icon string, got %q", s)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("expected sender to be called")
+	}
+}
