@@ -13,6 +13,7 @@ type GlobalConfigRequest struct {
 	LogLevel                  string                      `json:"log_level"`
 	ReactivateAfter           string                      `json:"reactivate_after"`
 	UpstreamIdleTimeout       string                      `json:"upstream_idle_timeout"`
+	ResponseHeaderTimeout     string                      `json:"response_header_timeout"`
 	MaxRequestBodyBytes       int64                       `json:"max_request_body_bytes"`
 	LogDir                    string                      `json:"log_dir"`
 	LogRetentionDays          int                         `json:"log_retention_days"`
@@ -42,6 +43,7 @@ type GlobalConfigResponse struct {
 	LogLevel                  string                       `json:"log_level"`
 	ReactivateAfter           string                       `json:"reactivate_after"`
 	UpstreamIdleTimeout       string                       `json:"upstream_idle_timeout"`
+	ResponseHeaderTimeout     string                       `json:"response_header_timeout"`
 	MaxRequestBodyBytes       int64                        `json:"max_request_body_bytes"`
 	LogDir                    string                       `json:"log_dir"`
 	LogRetentionDays          int                          `json:"log_retention_days"`
@@ -138,8 +140,9 @@ type ClientStatus struct {
 	EnabledProviders []string `json:"enabled_providers"`
 	CurrentProvider  string   `json:"current_provider"`
 
-	LastSwitch *ProviderSwitchStatus `json:"last_switch,omitempty"`
-	Providers  []ProviderStatus      `json:"providers,omitempty"`
+	LastSwitch  *ProviderSwitchStatus `json:"last_switch,omitempty"`
+	LastRequest *RequestOutcomeStatus `json:"last_request,omitempty"`
+	Providers   []ProviderStatus      `json:"providers,omitempty"`
 }
 
 type ProviderSwitchStatus struct {
@@ -148,12 +151,17 @@ type ProviderSwitchStatus struct {
 	To     string `json:"to"`
 	Reason string `json:"reason"`
 	Status int    `json:"status"`
+	Label  string `json:"label,omitempty"`
+	Detail string `json:"detail,omitempty"`
 }
 
 type ProviderStatus struct {
 	Name     string `json:"name"`
 	Priority int    `json:"priority"`
 	Enabled  bool   `json:"enabled"`
+	State    string `json:"state,omitempty"`
+	Label    string `json:"label,omitempty"`
+	Detail   string `json:"detail,omitempty"`
 
 	SkipReason string `json:"skip_reason,omitempty"` // disabled | deactivated | circuit_open
 
@@ -163,6 +171,19 @@ type ProviderStatus struct {
 
 	CircuitState  string `json:"circuit_state,omitempty"` // closed | open | half_open
 	CircuitOpenIn string `json:"circuit_open_in,omitempty"`
+}
+
+type RequestOutcomeStatus struct {
+	At       string `json:"at"`
+	Provider string `json:"provider"`
+	Status   int    `json:"status"`
+	Delivery string `json:"delivery"`
+	Protocol string `json:"protocol"`
+	Cause    string `json:"cause,omitempty"`
+	Bytes    int    `json:"bytes"`
+	Result   string `json:"result,omitempty"`
+	Label    string `json:"label,omitempty"`
+	Detail   string `json:"detail,omitempty"`
 }
 
 // ErrorResponse represents an error response
@@ -207,15 +228,16 @@ func boolPtrOrTrue(v *bool) bool {
 
 func toGlobalConfigResponse(gc config.GlobalConfig) GlobalConfigResponse {
 	return GlobalConfigResponse{
-		ListenAddr:          gc.ListenAddr,
-		Port:                gc.Port,
-		LogLevel:            string(gc.LogLevel),
-		ReactivateAfter:     gc.ReactivateAfter,
-		UpstreamIdleTimeout: gc.UpstreamIdleTimeout,
-		MaxRequestBodyBytes: gc.MaxRequestBody,
-		LogDir:              gc.LogDir,
-		LogRetentionDays:    gc.LogRetentionDays,
-		LogStdout:           boolPtrOrTrue(gc.LogStdout),
+		ListenAddr:            gc.ListenAddr,
+		Port:                  gc.Port,
+		LogLevel:              string(gc.LogLevel),
+		ReactivateAfter:       gc.ReactivateAfter,
+		UpstreamIdleTimeout:   gc.UpstreamIdleTimeout,
+		ResponseHeaderTimeout: gc.ResponseHeaderTimeout,
+		MaxRequestBodyBytes:   gc.MaxRequestBody,
+		LogDir:                gc.LogDir,
+		LogRetentionDays:      gc.LogRetentionDays,
+		LogStdout:             boolPtrOrTrue(gc.LogStdout),
 		Notifications: NotificationsConfigResponse{
 			Enabled:        gc.Notifications.Enabled,
 			MinLevel:       string(gc.Notifications.MinLevel),

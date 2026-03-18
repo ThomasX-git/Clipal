@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/lansespirit/Clipal/internal/logger"
 )
@@ -20,9 +21,11 @@ func (cp *ClientProxy) forwardManual(w http.ResponseWriter, req *http.Request, p
 		logger.Error("[%s] failed to read request body: %v", cp.clientType, err)
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
+			cp.recordTerminalRequest(time.Now(), "", http.StatusRequestEntityTooLarge, "request_rejected", "Request body too large.")
 			writeProxyError(w, "Request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
+		cp.recordTerminalRequest(time.Now(), "", http.StatusBadRequest, "request_rejected", "Failed to read request body.")
 		writeProxyError(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
@@ -42,6 +45,7 @@ func (cp *ClientProxy) forwardManual(w http.ResponseWriter, req *http.Request, p
 	}
 	if index < 0 || index >= len(cp.providers) {
 		logger.Warn("[%s] manual mode enabled but pinned provider not found", cp.clientType)
+		cp.recordTerminalRequest(time.Now(), "", http.StatusServiceUnavailable, "all_providers_unavailable", "Pinned provider not configured.")
 		writeProxyError(w, "Pinned provider not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -54,6 +58,7 @@ func (cp *ClientProxy) forwardManual(w http.ResponseWriter, req *http.Request, p
 	if err != nil {
 		logger.Error("[%s] failed to create request for %s: %v", cp.clientType, provider.Name, err)
 		cancelAttempt(nil)
+		cp.recordTerminalRequest(time.Now(), provider.Name, http.StatusBadGateway, "request_rejected", "Failed to create upstream request.")
 		writeProxyError(w, "Failed to create upstream request", http.StatusBadGateway)
 		return
 	}
@@ -69,6 +74,7 @@ func (cp *ClientProxy) forwardManual(w http.ResponseWriter, req *http.Request, p
 			return
 		}
 		cancelAttempt(nil)
+		cp.recordTerminalRequest(time.Now(), provider.Name, http.StatusBadGateway, "failed_before_response", describeAttemptFailure(provider.Name, "network", 0, true)+".")
 		writeProxyError(w, "Upstream request failed", http.StatusBadGateway)
 		return
 	}
@@ -78,13 +84,17 @@ func (cp *ClientProxy) forwardManual(w http.ResponseWriter, req *http.Request, p
 
 	onCommit := func() { cp.setCurrentIndex(index) }
 	allow := circuitAllowResult{}
-	if committed := cp.streamResponseToClient(w, resp, req, attemptCtx, cancelAttempt, index, allow, onCommit); committed {
-		if resp.StatusCode == http.StatusOK {
-			logger.Info("[%s] request completed via %s (manual)", cp.clientType, provider.Name)
-		}
+	result := cp.streamResponseToClient(w, resp, req, attemptCtx, cancelAttempt, index, allow, onCommit)
+	if result.kind == streamFinal {
+		cp.logRequestResult(provider.Name, resp.StatusCode, result, true)
 		return
 	}
 
 	cancelAttempt(nil)
+	reason := "network"
+	if isUpstreamIdleTimeout(attemptCtx, attemptCtx.Err()) {
+		reason = "idle_timeout"
+	}
+	cp.recordTerminalRequest(time.Now(), provider.Name, http.StatusBadGateway, "failed_before_response", describeAttemptFailure(provider.Name, reason, 0, true)+".")
 	writeProxyError(w, "Upstream response read failed", http.StatusBadGateway)
 }

@@ -10,16 +10,34 @@ import (
 	"github.com/lansespirit/Clipal/internal/logger"
 )
 
+type streamResultKind int
+
+const (
+	streamRetryNext streamResultKind = iota
+	streamFinal
+)
+
+type streamResult struct {
+	kind     streamResultKind
+	delivery deliveryStatus
+	protocol protocolStatus
+	proto    streamProtocolKind
+	cause    string
+	bytes    int
+	err      error
+}
+
 // streamResponseToClient handles the final stage of an upstream attempt: waiting for the first byte,
 // committing headers, and streaming the body. It handles idle timeouts, circuit breaker recording,
-// and cleanup. It returns true if it committed headers (indicating the attempt is final), and false
-// if it failed before headers (allowing the caller to potentially fail over).
-func (cp *ClientProxy) streamResponseToClient(w http.ResponseWriter, resp *http.Response, originalReq *http.Request, attemptCtx context.Context, cancelAttempt context.CancelCauseFunc, index int, allow circuitAllowResult, onCommit func()) bool {
+// and cleanup. It returns a terminal stream result so callers can distinguish a clean completion
+// from client disconnects and upstream aborts after the response has already been committed.
+func (cp *ClientProxy) streamResponseToClient(w http.ResponseWriter, resp *http.Response, originalReq *http.Request, attemptCtx context.Context, cancelAttempt context.CancelCauseFunc, index int, allow circuitAllowResult, onCommit func()) streamResult {
 	// Stream response to the client, with idle-timeout protection.
 	var idleTimer *time.Timer
 	if cp.upstreamIdle > 0 {
 		idleTimer = time.AfterFunc(cp.upstreamIdle, func() { cancelAttempt(errUpstreamIdleTimeout) })
 	}
+	tracker := newProtocolTracker(cp.clientType, originalReq, resp)
 
 	buf := make([]byte, 32*1024)
 	total := 0
@@ -28,6 +46,7 @@ func (cp *ClientProxy) streamResponseToClient(w http.ResponseWriter, resp *http.
 		idleTimer.Reset(cp.upstreamIdle)
 	}
 	total += firstN
+	tracker.append(buf[:firstN])
 
 	if firstN == 0 && firstErr != nil {
 		resp.Body.Close()
@@ -39,19 +58,44 @@ func (cp *ClientProxy) streamResponseToClient(w http.ResponseWriter, resp *http.
 			}
 			copyHeaders(w.Header(), resp.Header)
 			w.WriteHeader(resp.StatusCode)
-			cp.recordCircuitSuccess(time.Now(), index, allow.usedProbe)
+			protocol := tracker.finalStatus()
+			if protocol == protocolIncomplete {
+				cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "protocol_incomplete")
+			} else {
+				cp.recordCircuitSuccess(time.Now(), index, allow.usedProbe)
+			}
 			cancelAttempt(nil)
-			return true
+			return streamResult{
+				kind:     streamFinal,
+				delivery: deliveryCommittedComplete,
+				protocol: protocol,
+				proto:    tracker.kind,
+				cause:    streamCause(protocol, nil, attemptCtx, originalReq),
+			}
 		}
 
 		if originalReq.Context().Err() != nil {
 			// Client went away; do not record a provider failure.
 			cp.releaseCircuitPermit(index, allow.usedProbe)
 			cancelAttempt(nil)
-			return true
+			return streamResult{
+				kind:     streamFinal,
+				delivery: deliveryClientCanceled,
+				protocol: tracker.abortedStatus(),
+				proto:    tracker.kind,
+				cause:    "client_canceled",
+				err:      originalReq.Context().Err(),
+			}
 		}
 		// Return false so the caller can handle failure (e.g. failover).
-		return false
+		return streamResult{
+			kind:     streamRetryNext,
+			delivery: deliveryRetryNext,
+			protocol: tracker.abortedStatus(),
+			proto:    tracker.kind,
+			cause:    streamCause(protocolNotApplicable, firstErr, attemptCtx, originalReq),
+			err:      firstErr,
+		}
 	}
 
 	// Committed to this provider.
@@ -68,7 +112,15 @@ func (cp *ClientProxy) streamResponseToClient(w http.ResponseWriter, resp *http.
 			stopTimer(idleTimer)
 			cp.releaseCircuitPermit(index, allow.usedProbe)
 			cancelAttempt(nil)
-			return true
+			return streamResult{
+				kind:     streamFinal,
+				delivery: deliveryClientCanceled,
+				protocol: tracker.abortedStatus(),
+				proto:    tracker.kind,
+				cause:    "client_canceled",
+				bytes:    total,
+				err:      err,
+			}
 		}
 	}
 
@@ -80,12 +132,21 @@ func (cp *ClientProxy) streamResponseToClient(w http.ResponseWriter, resp *http.
 				idleTimer.Reset(cp.upstreamIdle)
 			}
 			total += nr
+			tracker.append(buf[:nr])
 			if _, ew := fw.Write(buf[:nr]); ew != nil {
 				resp.Body.Close()
 				stopTimer(idleTimer)
 				cp.releaseCircuitPermit(index, allow.usedProbe)
 				cancelAttempt(nil)
-				return true
+				return streamResult{
+					kind:     streamFinal,
+					delivery: deliveryClientCanceled,
+					protocol: tracker.abortedStatus(),
+					proto:    tracker.kind,
+					cause:    "client_canceled",
+					bytes:    total,
+					err:      ew,
+				}
 			}
 		}
 		if er != nil {
@@ -109,17 +170,48 @@ func (cp *ClientProxy) streamResponseToClient(w http.ResponseWriter, resp *http.
 	if copyErr != nil && originalReq.Context().Err() != nil {
 		cp.releaseCircuitPermit(index, allow.usedProbe)
 		cancelAttempt(nil)
-		return true
+		return streamResult{
+			kind:     streamFinal,
+			delivery: deliveryClientCanceled,
+			protocol: tracker.abortedStatus(),
+			proto:    tracker.kind,
+			cause:    "client_canceled",
+			bytes:    total,
+			err:      originalReq.Context().Err(),
+		}
 	}
+	protocol := tracker.finalStatus()
 	if copyErr == nil {
-		cp.recordCircuitSuccess(time.Now(), index, allow.usedProbe)
+		if protocol == protocolIncomplete {
+			cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "protocol_incomplete")
+		} else {
+			cp.recordCircuitSuccess(time.Now(), index, allow.usedProbe)
+		}
 	} else if isUpstreamIdleTimeout(attemptCtx, copyErr) {
 		cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "idle_timeout")
 	} else {
 		cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "network")
 	}
 	cancelAttempt(nil)
-	return true
+	if copyErr == nil {
+		return streamResult{
+			kind:     streamFinal,
+			delivery: deliveryCommittedComplete,
+			protocol: protocol,
+			proto:    tracker.kind,
+			cause:    streamCause(protocol, nil, attemptCtx, originalReq),
+			bytes:    total,
+		}
+	}
+	return streamResult{
+		kind:     streamFinal,
+		delivery: deliveryCommittedPartial,
+		protocol: tracker.abortedStatus(),
+		proto:    tracker.kind,
+		cause:    streamCause(protocolNotApplicable, copyErr, attemptCtx, originalReq),
+		bytes:    total,
+		err:      copyErr,
+	}
 }
 
 type flushWriter struct {
@@ -139,4 +231,20 @@ func (fw *flushWriter) Write(p []byte) (int, error) {
 		fl.Flush()
 	}
 	return n, err
+}
+
+func streamCause(protocol protocolStatus, err error, attemptCtx context.Context, originalReq *http.Request) string {
+	if originalReq != nil && originalReq.Context().Err() != nil {
+		return "client_canceled"
+	}
+	if protocol == protocolIncomplete {
+		return "protocol_incomplete"
+	}
+	if isUpstreamIdleTimeout(attemptCtx, err) {
+		return "idle_timeout"
+	}
+	if err != nil {
+		return "network"
+	}
+	return ""
 }

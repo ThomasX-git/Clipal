@@ -87,6 +87,11 @@ func (a *API) HandleUpdateGlobalConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.Global.LogLevel = config.LogLevel(req.LogLevel)
 	cfg.Global.ReactivateAfter = req.ReactivateAfter
 	cfg.Global.UpstreamIdleTimeout = req.UpstreamIdleTimeout
+	// Backwards compatible: if the UI/client doesn't send this (older versions),
+	// keep the current/default value instead of overwriting with empty.
+	if strings.TrimSpace(req.ResponseHeaderTimeout) != "" {
+		cfg.Global.ResponseHeaderTimeout = req.ResponseHeaderTimeout
+	}
 	cfg.Global.MaxRequestBody = req.MaxRequestBodyBytes
 	cfg.Global.LogDir = req.LogDir
 	cfg.Global.LogRetentionDays = req.LogRetentionDays
@@ -601,13 +606,18 @@ func buildClientStatus(cc config.ClientConfig, providers []config.Provider, rt p
 	outProviders := make([]ProviderStatus, 0, len(providers))
 	now := time.Now()
 	for _, p := range providers {
+		enabled := p.IsEnabled()
 		ps := ProviderStatus{
 			Name:     p.Name,
 			Priority: p.Priority,
-			Enabled:  p.IsEnabled(),
+			Enabled:  enabled,
 		}
-		if !p.IsEnabled() {
+		if !enabled {
 			ps.SkipReason = "disabled"
+			view := proxy.DescribeProviderAvailability(p.Name, enabled, proxy.ProviderRuntimeSnapshot{Name: p.Name})
+			ps.State = view.State
+			ps.Label = view.Label
+			ps.Detail = view.Detail
 			outProviders = append(outProviders, ps)
 			continue
 		}
@@ -623,18 +633,46 @@ func buildClientStatus(cc config.ClientConfig, providers []config.Provider, rt p
 				ps.SkipReason = "circuit_open"
 				ps.CircuitOpenIn = rtSnap.CircuitOpenIn.Truncate(time.Second).String()
 			}
+			view := proxy.DescribeProviderAvailability(p.Name, enabled, rtSnap)
+			ps.State = view.State
+			ps.Label = view.Label
+			ps.Detail = view.Detail
+		} else {
+			view := proxy.DescribeProviderAvailability(p.Name, enabled, proxy.ProviderRuntimeSnapshot{Name: p.Name})
+			ps.State = view.State
+			ps.Label = view.Label
+			ps.Detail = view.Detail
 		}
 		outProviders = append(outProviders, ps)
 	}
 
 	var lastSwitch *ProviderSwitchStatus
 	if rt.LastSwitch != nil && !rt.LastSwitch.At.IsZero() {
+		view := proxy.DescribeProviderSwitch(rt.LastSwitch.From, rt.LastSwitch.To, rt.LastSwitch.Reason, rt.LastSwitch.Status)
 		lastSwitch = &ProviderSwitchStatus{
 			At:     rt.LastSwitch.At.Format(time.RFC3339),
 			From:   rt.LastSwitch.From,
 			To:     rt.LastSwitch.To,
 			Reason: rt.LastSwitch.Reason,
 			Status: rt.LastSwitch.Status,
+			Label:  view.Label,
+			Detail: view.Detail,
+		}
+	}
+	var lastRequest *RequestOutcomeStatus
+	if rt.LastRequest != nil && !rt.LastRequest.At.IsZero() {
+		view := proxy.DescribeRequestOutcome(*rt.LastRequest)
+		lastRequest = &RequestOutcomeStatus{
+			At:       rt.LastRequest.At.Format(time.RFC3339),
+			Provider: rt.LastRequest.Provider,
+			Status:   rt.LastRequest.Status,
+			Delivery: rt.LastRequest.Delivery,
+			Protocol: rt.LastRequest.Protocol,
+			Cause:    rt.LastRequest.Cause,
+			Bytes:    rt.LastRequest.Bytes,
+			Result:   view.Result,
+			Label:    view.Label,
+			Detail:   view.Detail,
 		}
 	}
 
@@ -646,8 +684,9 @@ func buildClientStatus(cc config.ClientConfig, providers []config.Provider, rt p
 		EnabledProviders: enabledNames,
 		CurrentProvider:  current,
 
-		LastSwitch: lastSwitch,
-		Providers:  outProviders,
+		LastSwitch:  lastSwitch,
+		LastRequest: lastRequest,
+		Providers:   outProviders,
 	}
 }
 

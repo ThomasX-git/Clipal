@@ -223,6 +223,12 @@
                             <input type="text" x-model="globalConfig.upstream_idle_timeout" class="form-input" required>
                             <div class="form-hint">e.g., 3m</div>
                         </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Response Header Timeout</label>
+                            <input type="text" x-model="globalConfig.response_header_timeout" class="form-input" required>
+                            <div class="form-hint">e.g., 2m, 3m (0 disables)</div>
+                        </div>
                     </div>
 
                     <div class="form-group" style="margin-top: 16px;">
@@ -523,11 +529,22 @@
                                 <div class="form-hint" style="margin-top: 8px;" x-show="client.last_switch">
                                     Last switch:
                                     <span
-                                        x-text="(client.last_switch && client.last_switch.from) ? (client.last_switch.from + ' → ' + client.last_switch.to) : ''"></span>
+                                        x-text="(client.last_switch && client.last_switch.label) ? client.last_switch.label : ''"></span>
                                     <span
-                                        x-text="(client.last_switch && client.last_switch.reason) ? ('(' + client.last_switch.reason + ' ' + client.last_switch.status + ')') : ''"></span>
+                                        x-text="(client.last_switch && client.last_switch.detail) ? client.last_switch.detail : ''"></span>
                                     <span
                                         x-text="(client.last_switch && client.last_switch.at) ? client.last_switch.at : ''"></span>
+                                </div>
+                                <div class="form-hint" style="margin-top: 8px;" x-show="client.last_request">
+                                    Last request:
+                                    <span
+                                        x-text="(client.last_request && client.last_request.label) ? client.last_request.label : ''"></span>
+                                    <span
+                                        x-text="(client.last_request && client.last_request.detail) ? client.last_request.detail : ''"></span>
+                                    <span
+                                        x-text="(client.last_request && client.last_request.bytes) ? ('(' + client.last_request.bytes + ' bytes)') : ''"></span>
+                                    <span
+                                        x-text="(client.last_request && client.last_request.at) ? client.last_request.at : ''"></span>
                                 </div>
                             </div>
                             <div class="status-metrics">

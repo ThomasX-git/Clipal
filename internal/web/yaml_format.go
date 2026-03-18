@@ -82,6 +82,9 @@ func formatGlobalConfigYAML(gc config.GlobalConfig) []byte {
 	b.WriteString("# Cancel an upstream attempt if no response body bytes are received for this long.\n")
 	b.WriteString("# Useful for SSE streams that can hang after headers. Set to 0 to disable.\n")
 	b.WriteString(fmt.Sprintf("upstream_idle_timeout: %s\n", yamlDoubleQuote(strings.TrimSpace(gc.UpstreamIdleTimeout))))
+	b.WriteString("# How long to wait for the upstream to return response headers.\n")
+	b.WriteString("# Set to 0 to disable.\n")
+	b.WriteString(fmt.Sprintf("response_header_timeout: %s\n", yamlDoubleQuote(strings.TrimSpace(gc.ResponseHeaderTimeout))))
 	b.WriteString("# Max request body size in bytes (clipal buffers request bodies for retries).\n")
 	b.WriteString(fmt.Sprintf("max_request_body_bytes: %d\n\n", gc.MaxRequestBody))
 

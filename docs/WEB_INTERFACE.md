@@ -33,6 +33,7 @@ Configure system-wide settings:
 - **Provider Failover**: Configure automatic failover behavior
   - Reactivate After: Duration before reactivating failed providers
   - Upstream Idle Timeout: Timeout for idle connections
+  - Response Header Timeout: Timeout while waiting for upstream response headers
   - Ignore Count Tokens Failover: Keep context cache warm for Claude Code
 - **Circuit Breaker**: Configure circuit breaker thresholds and open timeout
   - Set **Failure Threshold** to `0` to disable the circuit breaker

@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/lansespirit/Clipal/internal/config"
+	"github.com/lansespirit/Clipal/internal/proxy"
 )
 
 func decodeJSON(t *testing.T, body *bytes.Buffer) map[string]any {
@@ -220,6 +222,181 @@ func TestReorderProviders_PreservesUnmentioned_AndRejectsUnknown(t *testing.T) {
 
 	if _, err := reorderProviders(in, []string{"nope"}); err == nil {
 		t.Fatalf("expected error for unknown provider")
+	}
+}
+
+func TestBuildClientStatus_IncludesLastRequestOutcome(t *testing.T) {
+	cc := config.ClientConfig{
+		Mode: config.ClientModeAuto,
+		Providers: []config.Provider{
+			{Name: "p1", Priority: 1},
+		},
+	}
+	now := time.Date(2026, 3, 18, 16, 32, 24, 0, time.UTC)
+	rt := proxy.ClientRuntimeSnapshot{
+		CurrentProvider: "p1",
+		LastRequest: &proxy.RequestOutcomeEvent{
+			At:       now,
+			Provider: "p1",
+			Status:   200,
+			Delivery: "committed_complete",
+			Protocol: "completed",
+			Cause:    "",
+			Bytes:    123,
+		},
+	}
+
+	got := buildClientStatus(cc, cc.Providers, rt)
+	if got.LastRequest == nil {
+		t.Fatalf("expected last_request to be populated")
+	}
+	if got.LastRequest.Provider != "p1" {
+		t.Fatalf("last_request.provider: got %q want %q", got.LastRequest.Provider, "p1")
+	}
+	if got.LastRequest.Delivery != "committed_complete" {
+		t.Fatalf("last_request.delivery: got %q want %q", got.LastRequest.Delivery, "committed_complete")
+	}
+	if got.LastRequest.Protocol != "completed" {
+		t.Fatalf("last_request.protocol: got %q want %q", got.LastRequest.Protocol, "completed")
+	}
+	if got.LastRequest.Bytes != 123 {
+		t.Fatalf("last_request.bytes: got %d want %d", got.LastRequest.Bytes, 123)
+	}
+	if got.LastRequest.At != now.Format(time.RFC3339) {
+		t.Fatalf("last_request.at: got %q want %q", got.LastRequest.At, now.Format(time.RFC3339))
+	}
+	if got.LastRequest.Result != "completed" {
+		t.Fatalf("last_request.result: got %q want %q", got.LastRequest.Result, "completed")
+	}
+	if got.LastRequest.Label != "Completed via p1" {
+		t.Fatalf("last_request.label: got %q want %q", got.LastRequest.Label, "Completed via p1")
+	}
+	if got.LastRequest.Detail == "" {
+		t.Fatalf("expected last_request.detail to be populated")
+	}
+}
+
+func TestBuildClientStatus_NormalizesDisplayFields(t *testing.T) {
+	cc := config.ClientConfig{
+		Mode: config.ClientModeAuto,
+		Providers: []config.Provider{
+			{Name: "p1", Priority: 1},
+			{Name: "p2", Priority: 2},
+		},
+	}
+	now := time.Date(2026, 3, 18, 16, 32, 24, 0, time.UTC)
+	deactivatedUntil := time.Now().Add(30 * time.Second)
+	rt := proxy.ClientRuntimeSnapshot{
+		CurrentProvider: "p2",
+		LastSwitch: &proxy.ProviderSwitchEvent{
+			At:     now,
+			From:   "p1",
+			To:     "p2",
+			Reason: "rate_limit",
+			Status: 429,
+		},
+		Providers: []proxy.ProviderRuntimeSnapshot{
+			{
+				Name:              "p1",
+				DeactivatedReason: "rate_limit",
+				DeactivatedUntil:  deactivatedUntil,
+			},
+			{
+				Name:         "p2",
+				CircuitState: "half_open",
+			},
+		},
+	}
+
+	got := buildClientStatus(cc, cc.Providers, rt)
+	if got.LastSwitch == nil {
+		t.Fatalf("expected last_switch to be populated")
+	}
+	if got.LastSwitch.Label != "p1 -> p2" {
+		t.Fatalf("last_switch.label: got %q want %q", got.LastSwitch.Label, "p1 -> p2")
+	}
+	if got.LastSwitch.Detail == "" {
+		t.Fatalf("expected last_switch.detail to be populated")
+	}
+	if len(got.Providers) != 2 {
+		t.Fatalf("providers len: got %d want %d", len(got.Providers), 2)
+	}
+	if got.Providers[0].State != "cooling_down" {
+		t.Fatalf("provider[0].state: got %q want %q", got.Providers[0].State, "cooling_down")
+	}
+	if got.Providers[0].Label != "p1 (cooling down)" {
+		t.Fatalf("provider[0].label: got %q want %q", got.Providers[0].Label, "p1 (cooling down)")
+	}
+	if got.Providers[0].Detail == "" {
+		t.Fatalf("expected provider[0].detail to be populated")
+	}
+	if got.Providers[1].State != "recovery_probe" {
+		t.Fatalf("provider[1].state: got %q want %q", got.Providers[1].State, "recovery_probe")
+	}
+}
+
+func TestBuildClientStatus_IncludesTerminalFailureOutcome(t *testing.T) {
+	cc := config.ClientConfig{
+		Mode: config.ClientModeAuto,
+		Providers: []config.Provider{
+			{Name: "p1", Priority: 1},
+		},
+	}
+	now := time.Date(2026, 3, 18, 16, 32, 24, 0, time.UTC)
+	rt := proxy.ClientRuntimeSnapshot{
+		CurrentProvider: "p1",
+		LastRequest: &proxy.RequestOutcomeEvent{
+			At:       now,
+			Provider: "p1",
+			Status:   http.StatusServiceUnavailable,
+			Result:   "all_providers_failed",
+			Detail:   "p1 returned HTTP 503 Service Unavailable",
+		},
+	}
+
+	got := buildClientStatus(cc, cc.Providers, rt)
+	if got.LastRequest == nil {
+		t.Fatalf("expected last_request to be populated")
+	}
+	if got.LastRequest.Result != "all_providers_failed" {
+		t.Fatalf("last_request.result: got %q want %q", got.LastRequest.Result, "all_providers_failed")
+	}
+	if got.LastRequest.Label != "All providers failed" {
+		t.Fatalf("last_request.label: got %q want %q", got.LastRequest.Label, "All providers failed")
+	}
+	if got.LastRequest.Detail != "p1 returned HTTP 503 Service Unavailable" {
+		t.Fatalf("last_request.detail: got %q", got.LastRequest.Detail)
+	}
+}
+
+func TestBuildClientStatus_IncludesRequestRejectedOutcome(t *testing.T) {
+	cc := config.ClientConfig{
+		Mode: config.ClientModeAuto,
+		Providers: []config.Provider{
+			{Name: "broken", Priority: 1},
+		},
+	}
+	now := time.Date(2026, 3, 18, 16, 32, 24, 0, time.UTC)
+	rt := proxy.ClientRuntimeSnapshot{
+		CurrentProvider: "broken",
+		LastRequest: &proxy.RequestOutcomeEvent{
+			At:       now,
+			Provider: "broken",
+			Status:   http.StatusBadGateway,
+			Result:   "request_rejected",
+			Detail:   "broken request could not be prepared locally: invalid base_url",
+		},
+	}
+
+	got := buildClientStatus(cc, cc.Providers, rt)
+	if got.LastRequest == nil {
+		t.Fatalf("expected last_request to be populated")
+	}
+	if got.LastRequest.Result != "request_rejected" {
+		t.Fatalf("last_request.result: got %q want %q", got.LastRequest.Result, "request_rejected")
+	}
+	if got.LastRequest.Label != "Request rejected by proxy" {
+		t.Fatalf("last_request.label: got %q want %q", got.LastRequest.Label, "Request rejected by proxy")
 	}
 }
 

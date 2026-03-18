@@ -61,11 +61,12 @@ func (cp *ClientProxy) reactivateExpired() {
 		if now.Before(d.until) {
 			continue
 		}
+		detail := reactivationDetail(d.reason)
 		cp.deactivated[i] = providerDeactivation{}
 		if i < len(cp.providers) {
-			logger.Info("[%s] provider %s reactivated", cp.clientType, cp.providers[i].Name)
+			logger.Info("[%s] provider %s %s", cp.clientType, cp.providers[i].Name, detail)
 		} else {
-			logger.Info("[%s] provider #%d reactivated", cp.clientType, i)
+			logger.Info("[%s] provider #%d %s", cp.clientType, i, detail)
 		}
 	}
 }
@@ -421,5 +422,31 @@ func (cp *ClientProxy) recordProviderSwitch(from string, to string, reason strin
 		To:     to,
 		Reason: reason,
 		Status: status,
+	}
+}
+
+func (cp *ClientProxy) recordLastRequest(now time.Time, provider string, status int, result streamResult) {
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	cp.lastRequest = RequestOutcomeEvent{
+		At:       now,
+		Provider: provider,
+		Status:   status,
+		Delivery: string(result.delivery),
+		Protocol: string(result.protocol),
+		Cause:    result.cause,
+		Bytes:    result.bytes,
+	}
+}
+
+func (cp *ClientProxy) recordTerminalRequest(now time.Time, provider string, status int, result string, detail string) {
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	cp.lastRequest = RequestOutcomeEvent{
+		At:       now,
+		Provider: provider,
+		Status:   status,
+		Result:   result,
+		Detail:   detail,
 	}
 }

@@ -10,10 +10,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/lansespirit/Clipal/internal/config"
+	"github.com/lansespirit/Clipal/internal/logger"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -36,6 +38,8 @@ func newResponse(status int, hdr http.Header, body string) *http.Response {
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}
 }
+
+const testResponseHeaderTimeout = 2 * time.Minute
 
 func TestPathPrefixMatchAndStrip(t *testing.T) {
 	t.Parallel()
@@ -231,7 +235,7 @@ func TestForwardWithFailover_DeactivateOn401(t *testing.T) {
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -270,7 +274,7 @@ func TestForwardWithFailover_RetryOn503DoesNotDeactivate(t *testing.T) {
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -303,7 +307,7 @@ func TestForwardWithFailover_ContextCanceledDoesNotRetryOtherProviders(t *testin
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
 		{Name: "p3", BaseURL: "http://p3", APIKey: "k3", Priority: 3},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -347,7 +351,7 @@ func TestForwardWithFailover_IdleTimeoutBeforeFirstByteRetriesNextProvider(t *te
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
-	}, time.Hour, 10*time.Millisecond, circuitBreakerConfig{})
+	}, time.Hour, 10*time.Millisecond, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -365,6 +369,227 @@ func TestForwardWithFailover_IdleTimeoutBeforeFirstByteRetriesNextProvider(t *te
 	}
 	if got := cp.getCurrentIndex(); got != 1 {
 		t.Fatalf("currentIndex: got %d want %d", got, 1)
+	}
+}
+
+func TestForwardWithFailover_PartialStreamDoesNotLogCompleted(t *testing.T) {
+	var (
+		logMu    sync.Mutex
+		messages []string
+	)
+	logger.SetHook(func(_ string, message string) {
+		if strings.Contains(message, "streamerr") {
+			logMu.Lock()
+			messages = append(messages, message)
+			logMu.Unlock()
+		}
+	})
+	t.Cleanup(func() {
+		logger.SetHook(nil)
+	})
+
+	rt := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "streamerr" {
+			return nil, errors.New("unexpected host")
+		}
+		reads := 0
+		body := io.NopCloser(readerFunc(func(p []byte) (int, error) {
+			reads++
+			if reads == 1 {
+				copy(p, []byte("chunk"))
+				return len("chunk"), nil
+			}
+			return 0, errors.New("upstream stream broke")
+		}))
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       body,
+		}, nil
+	})
+
+	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
+		{Name: "streamerr", BaseURL: "http://streamerr", APIKey: "k1", Priority: 1},
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
+	cp.httpClient.Transport = rt
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://proxy/codex/v1/test", bytes.NewReader([]byte(`{"x":1}`)))
+	cp.forwardWithFailover(rr, req, "/v1/test")
+
+	if rr.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d", rr.Result().StatusCode, http.StatusOK)
+	}
+	if got := rr.Body.String(); got != "chunk" {
+		t.Fatalf("body: got %q want %q", got, "chunk")
+	}
+
+	logMu.Lock()
+	defer logMu.Unlock()
+
+	var sawCopyFailure bool
+	for _, msg := range messages {
+		if strings.Contains(msg, "Completed via streamerr") {
+			t.Fatalf("did not expect completion log, got %q", msg)
+		}
+		if strings.Contains(msg, "response copy failed via streamerr") {
+			sawCopyFailure = true
+		}
+	}
+	if !sawCopyFailure {
+		t.Fatalf("expected response copy failure log for streamerr, got %v", messages)
+	}
+}
+
+func TestProtocolTrackerDetectsCompletionMarkers(t *testing.T) {
+	openAIResp := &http.Response{Header: http.Header{"Content-Type": []string{"text/event-stream"}}}
+	openAITracker := newProtocolTracker(ClientCodex, nil, openAIResp)
+	openAITracker.append([]byte("event: response.completed\ndata: {\"type\":\"response.completed\"}\n\n"))
+	if got := openAITracker.finalStatus(); got != protocolCompleted {
+		t.Fatalf("openai finalStatus: got %s want %s", got, protocolCompleted)
+	}
+
+	claudeResp := &http.Response{Header: http.Header{"Content-Type": []string{"text/event-stream"}}}
+	claudeTracker := newProtocolTracker(ClientClaudeCode, nil, claudeResp)
+	claudeTracker.append([]byte("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"))
+	if got := claudeTracker.finalStatus(); got != protocolCompleted {
+		t.Fatalf("claude finalStatus: got %s want %s", got, protocolCompleted)
+	}
+}
+
+func TestForwardWithFailover_CodexSSEDoneLogsCompleted(t *testing.T) {
+	var (
+		logMu    sync.Mutex
+		messages []string
+	)
+	logger.SetHook(func(_ string, message string) {
+		if strings.Contains(message, "ssedone") {
+			logMu.Lock()
+			messages = append(messages, message)
+			logMu.Unlock()
+		}
+	})
+	t.Cleanup(func() {
+		logger.SetHook(nil)
+	})
+
+	rt := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "ssedone" {
+			return nil, errors.New("unexpected host")
+		}
+		reads := 0
+		body := io.NopCloser(readerFunc(func(p []byte) (int, error) {
+			reads++
+			switch reads {
+			case 1:
+				copy(p, []byte("data: {\"type\":\"response.output_text.delta\"}\n\n"))
+				return len("data: {\"type\":\"response.output_text.delta\"}\n\n"), nil
+			case 2:
+				copy(p, []byte("data: [DONE]\n\n"))
+				return len("data: [DONE]\n\n"), nil
+			default:
+				return 0, io.EOF
+			}
+		}))
+		h := make(http.Header)
+		h.Set("Content-Type", "text/event-stream")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     h,
+			Body:       body,
+		}, nil
+	})
+
+	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
+		{Name: "ssedone", BaseURL: "http://ssedone", APIKey: "k1", Priority: 1},
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
+	cp.httpClient.Transport = rt
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://proxy/codex/v1/responses", bytes.NewReader([]byte(`{"stream":true}`)))
+	cp.forwardWithFailover(rr, req, "/v1/responses")
+
+	if rr.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d", rr.Result().StatusCode, http.StatusOK)
+	}
+
+	logMu.Lock()
+	defer logMu.Unlock()
+	for _, msg := range messages {
+		if strings.Contains(msg, "Completed via ssedone") {
+			return
+		}
+	}
+	t.Fatalf("expected completion log for ssedone, got %v", messages)
+}
+
+func TestForwardWithFailover_CodexSSEEOFWithoutDoneLogsIncomplete(t *testing.T) {
+	var (
+		logMu    sync.Mutex
+		messages []string
+	)
+	logger.SetHook(func(_ string, message string) {
+		if strings.Contains(message, "sseincomplete") {
+			logMu.Lock()
+			messages = append(messages, message)
+			logMu.Unlock()
+		}
+	})
+	t.Cleanup(func() {
+		logger.SetHook(nil)
+	})
+
+	rt := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "sseincomplete" {
+			return nil, errors.New("unexpected host")
+		}
+		reads := 0
+		body := io.NopCloser(readerFunc(func(p []byte) (int, error) {
+			reads++
+			switch reads {
+			case 1:
+				copy(p, []byte("data: {\"type\":\"response.output_text.delta\"}\n\n"))
+				return len("data: {\"type\":\"response.output_text.delta\"}\n\n"), nil
+			default:
+				return 0, io.EOF
+			}
+		}))
+		h := make(http.Header)
+		h.Set("Content-Type", "text/event-stream")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     h,
+			Body:       body,
+		}, nil
+	})
+
+	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
+		{Name: "sseincomplete", BaseURL: "http://sseincomplete", APIKey: "k1", Priority: 1},
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
+	cp.httpClient.Transport = rt
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://proxy/codex/v1/responses", bytes.NewReader([]byte(`{"stream":true}`)))
+	cp.forwardWithFailover(rr, req, "/v1/responses")
+
+	if rr.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d", rr.Result().StatusCode, http.StatusOK)
+	}
+
+	logMu.Lock()
+	defer logMu.Unlock()
+
+	var sawIncomplete bool
+	for _, msg := range messages {
+		if strings.Contains(msg, "Completed via sseincomplete") {
+			t.Fatalf("did not expect completion log, got %q", msg)
+		}
+		if strings.Contains(msg, "Incomplete response via sseincomplete") {
+			sawIncomplete = true
+		}
+	}
+	if !sawIncomplete {
+		t.Fatalf("expected incomplete stream log for sseincomplete, got %v", messages)
 	}
 }
 
@@ -469,7 +694,7 @@ func TestForwardWithFailover_DeactivateOn429Quota(t *testing.T) {
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -504,7 +729,7 @@ func TestForwardWithFailover_429RateLimitDoesNotDeactivate(t *testing.T) {
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -529,7 +754,7 @@ func TestForwardManual_DoesNotDeactivateOn401(t *testing.T) {
 
 	cp := newClientProxy(ClientCodex, config.ClientModeManual, "p1", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -554,7 +779,7 @@ func TestForwardManual_DoesNotDeactivateOn402(t *testing.T) {
 
 	cp := newClientProxy(ClientCodex, config.ClientModeManual, "p1", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -581,7 +806,7 @@ func TestForwardManual_DoesNotDeactivateOn429Quota(t *testing.T) {
 
 	cp := newClientProxy(ClientCodex, config.ClientModeManual, "p1", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -608,7 +833,7 @@ func TestForwardManual_PassesThrough200(t *testing.T) {
 
 	cp := newClientProxy(ClientCodex, config.ClientModeManual, "p1", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -649,7 +874,7 @@ func TestForwardWithFailover_AllProvidersHalfOpenBusy_ReturnsRetryAfter(t *testi
 
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
-	}, time.Hour, 0, cbCfg)
+	}, time.Hour, 0, testResponseHeaderTimeout, cbCfg)
 	cp.httpClient.Transport = rt
 
 	// Force half-open saturation.
@@ -684,7 +909,7 @@ func TestForwardWithFailover_ReactivateAfterTTL(t *testing.T) {
 
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	// Simulate a prior deactivation older than the TTL.
@@ -699,6 +924,107 @@ func TestForwardWithFailover_ReactivateAfterTTL(t *testing.T) {
 	}
 	if rr.Result().StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want %d", rr.Result().StatusCode, http.StatusOK)
+	}
+}
+
+func TestForwardWithFailover_LastSwitchTracksLastHop(t *testing.T) {
+	t.Parallel()
+
+	rt := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Host {
+		case "p1":
+			return newResponse(http.StatusServiceUnavailable, nil, "server busy"), nil
+		case "p2":
+			h := make(http.Header)
+			h.Set("Retry-After", "30")
+			return newResponse(http.StatusTooManyRequests, h, `{"error":{"message":"rate limit","type":"rate_limit_exceeded","code":"rate_limit_exceeded"}}`), nil
+		case "p3":
+			return newResponse(http.StatusOK, nil, "ok"), nil
+		default:
+			return nil, errors.New("unexpected host")
+		}
+	})
+
+	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
+		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
+		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
+		{Name: "p3", BaseURL: "http://p3", APIKey: "k3", Priority: 3},
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
+	cp.httpClient.Transport = rt
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://proxy/codex/v1/responses", bytes.NewReader([]byte(`{"x":1}`)))
+	cp.forwardWithFailover(rr, req, "/v1/responses")
+
+	if rr.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d", rr.Result().StatusCode, http.StatusOK)
+	}
+	if cp.lastSwitch.From != "p2" || cp.lastSwitch.To != "p3" {
+		t.Fatalf("lastSwitch hop: got %s -> %s want p2 -> p3", cp.lastSwitch.From, cp.lastSwitch.To)
+	}
+	if cp.lastSwitch.Reason != "rate_limit" {
+		t.Fatalf("lastSwitch reason: got %q want %q", cp.lastSwitch.Reason, "rate_limit")
+	}
+	if cp.lastSwitch.Status != http.StatusTooManyRequests {
+		t.Fatalf("lastSwitch status: got %d want %d", cp.lastSwitch.Status, http.StatusTooManyRequests)
+	}
+}
+
+func TestForwardWithFailover_AllProvidersFailedUpdatesLastRequest(t *testing.T) {
+	t.Parallel()
+
+	rt := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "p1" {
+			return nil, errors.New("unexpected host")
+		}
+		return newResponse(http.StatusServiceUnavailable, nil, "server busy"), nil
+	})
+
+	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
+		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
+	cp.httpClient.Transport = rt
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://proxy/codex/v1/responses", bytes.NewReader([]byte(`{"x":1}`)))
+	cp.forwardWithFailover(rr, req, "/v1/responses")
+
+	if rr.Result().StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status: got %d want %d", rr.Result().StatusCode, http.StatusServiceUnavailable)
+	}
+	if cp.lastRequest.Result != "all_providers_failed" {
+		t.Fatalf("lastRequest.Result: got %q want %q", cp.lastRequest.Result, "all_providers_failed")
+	}
+	if cp.lastRequest.Provider != "p1" {
+		t.Fatalf("lastRequest.Provider: got %q want %q", cp.lastRequest.Provider, "p1")
+	}
+	if !strings.Contains(cp.lastRequest.Detail, "p1 returned HTTP 503 Service Unavailable") {
+		t.Fatalf("lastRequest.Detail: got %q", cp.lastRequest.Detail)
+	}
+}
+
+func TestForwardWithFailover_RequestBuildFailureUpdatesLastRequest(t *testing.T) {
+	t.Parallel()
+
+	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
+		{Name: "broken", BaseURL: "://bad-url", APIKey: "k1", Priority: 1},
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://proxy/codex/v1/responses", bytes.NewReader([]byte(`{"x":1}`)))
+	cp.forwardWithFailover(rr, req, "/v1/responses")
+
+	if rr.Result().StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status: got %d want %d", rr.Result().StatusCode, http.StatusServiceUnavailable)
+	}
+	if cp.lastRequest.Result != "request_rejected" {
+		t.Fatalf("lastRequest.Result: got %q want %q", cp.lastRequest.Result, "request_rejected")
+	}
+	if cp.lastRequest.Provider != "broken" {
+		t.Fatalf("lastRequest.Provider: got %q want %q", cp.lastRequest.Provider, "broken")
+	}
+	if !strings.Contains(cp.lastRequest.Detail, "invalid base_url") {
+		t.Fatalf("lastRequest.Detail: got %q", cp.lastRequest.Detail)
 	}
 }
 
@@ -737,7 +1063,7 @@ func TestForwardWithFailover_403GzipBodyDecodedAndRetriesNextProvider(t *testing
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -784,7 +1110,7 @@ func TestForwardWithFailover_429AnthropicRateLimitDoesNotDeactivate(t *testing.T
 	cp := newClientProxy(ClientClaudeCode, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -819,7 +1145,7 @@ func TestForwardWithFailover_429RetryAfterCooldown(t *testing.T) {
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -861,7 +1187,7 @@ func TestForwardWithFailover_429RetryAfterCappedAtOneHour(t *testing.T) {
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -907,7 +1233,7 @@ func TestForwardWithFailover_AllProvidersCooldownReturnsRetryAfter(t *testing.T)
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -944,7 +1270,7 @@ func TestForwardManual_DoesNotFailover(t *testing.T) {
 	cp := newClientProxy(ClientCodex, config.ClientModeManual, "p1", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
 		{Name: "p2", BaseURL: "http://p2", APIKey: "k2", Priority: 2},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -975,7 +1301,7 @@ func TestForwardManual_PassesThroughRetryAfter(t *testing.T) {
 
 	cp := newClientProxy(ClientCodex, config.ClientModeManual, "p1", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
-	}, time.Hour, 0, circuitBreakerConfig{})
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 	cp.httpClient.Transport = rt
 
 	rr := httptest.NewRecorder()
@@ -1018,7 +1344,7 @@ func TestCircuitBreaker_OpensAndReturnsRetryAfter(t *testing.T) {
 
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
-	}, time.Hour, 0, cbCfg)
+	}, time.Hour, 0, testResponseHeaderTimeout, cbCfg)
 	cp.httpClient.Transport = rt
 
 	// First two failures trip the circuit.
@@ -1071,7 +1397,7 @@ func TestCircuitBreaker_DoesNotCountClientCancelAsFailure(t *testing.T) {
 
 	cp := newClientProxy(ClientCodex, config.ClientModeAuto, "", []config.Provider{
 		{Name: "p1", BaseURL: "http://p1", APIKey: "k1", Priority: 1},
-	}, time.Hour, 0, cbCfg)
+	}, time.Hour, 0, testResponseHeaderTimeout, cbCfg)
 	cp.httpClient.Transport = rt
 
 	ctx, cancel := context.WithCancel(context.Background())

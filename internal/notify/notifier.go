@@ -130,29 +130,24 @@ func get() *Notifier {
 	return current
 }
 
-func ProviderSwitched(client string, from string, to string, reason string, status int) {
+func ProviderSwitched(client string, summary string, detail string) {
 	n := get()
 	if n == nil || !n.enabled || !n.providerSwitch {
 		return
 	}
 	client = strings.TrimSpace(client)
-	from = strings.TrimSpace(from)
-	to = strings.TrimSpace(to)
-	if client == "" || from == "" || to == "" || from == to {
+	summary = strings.TrimSpace(summary)
+	detail = strings.TrimSpace(detail)
+	if client == "" || summary == "" {
 		return
 	}
 
-	msg := fmt.Sprintf("%s: %s → %s", client, from, to)
-	reason = strings.TrimSpace(reason)
-	if reason != "" && status > 0 {
-		msg = fmt.Sprintf("%s (%s %d)", msg, reason, status)
-	} else if reason != "" {
-		msg = fmt.Sprintf("%s (%s)", msg, reason)
-	} else if status > 0 {
-		msg = fmt.Sprintf("%s (%d)", msg, status)
+	msg := fmt.Sprintf("%s: %s", client, summary)
+	if detail != "" {
+		msg = fmt.Sprintf("%s. %s", msg, detail)
 	}
 
-	n.enqueue("clipal", msg, "switch:"+client+":"+from+"->"+to+":"+reason)
+	n.enqueue("clipal", msg, "switch:"+client+":"+summary)
 }
 
 func LogHook(levelStr string, message string) {

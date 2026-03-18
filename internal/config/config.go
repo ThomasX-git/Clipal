@@ -51,6 +51,9 @@ type GlobalConfig struct {
 	// for the duration (useful for SSE streams that may hang after headers).
 	// Set to "0" to disable.
 	UpstreamIdleTimeout string               `yaml:"upstream_idle_timeout"`
+	// ResponseHeaderTimeout controls how long we wait for the upstream to return
+	// response headers after the request is fully written. Set to "0" to disable.
+	ResponseHeaderTimeout string              `yaml:"response_header_timeout"`
 	MaxRequestBody      int64                `yaml:"max_request_body_bytes"`
 	LogDir              string               `yaml:"log_dir"`
 	LogRetentionDays    int                  `yaml:"log_retention_days"`
@@ -110,6 +113,7 @@ func DefaultGlobalConfig() GlobalConfig {
 		LogLevel:            LogLevelInfo,
 		ReactivateAfter:     "1h",
 		UpstreamIdleTimeout: "3m",
+		ResponseHeaderTimeout: "2m",
 		// Default body limit: 32 MiB. clipal buffers request bodies to support retries,
 		// so a hard cap prevents unbounded memory usage.
 		MaxRequestBody:   32 * 1024 * 1024,
@@ -270,6 +274,10 @@ func (c *Config) Validate() error {
 	idle, err := time.ParseDuration(c.Global.UpstreamIdleTimeout)
 	if err != nil || idle < 0 {
 		return fmt.Errorf("invalid upstream_idle_timeout: %s", c.Global.UpstreamIdleTimeout)
+	}
+	respHdr, err := time.ParseDuration(c.Global.ResponseHeaderTimeout)
+	if err != nil || respHdr < 0 {
+		return fmt.Errorf("invalid response_header_timeout: %s", c.Global.ResponseHeaderTimeout)
 	}
 	if c.Global.LogRetentionDays < 0 {
 		return fmt.Errorf("invalid log_retention_days: %d", c.Global.LogRetentionDays)

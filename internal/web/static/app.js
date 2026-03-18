@@ -24,6 +24,7 @@ function app() {
             log_level: 'info',
             reactivate_after: '',
             upstream_idle_timeout: '',
+            response_header_timeout: '',
             max_request_body_bytes: 0,
             log_dir: '',
             log_retention_days: 0,
@@ -293,6 +294,9 @@ function app() {
             const name = String(p.name || '').trim();
             if (!name) return '';
 
+            const label = String(p.label || '').trim();
+            if (label) return label;
+
             if (p.enabled === false) return `${name} (disabled)`;
 
             const skip = String(p.skip_reason || '').trim();
@@ -320,15 +324,19 @@ function app() {
             const base = this.providerStatusLabel(p);
             if (!base) return '';
 
+            const detail = String(p.detail || '').trim();
+            let title = detail ? `${base}\n${detail}` : base;
+
             const skip = String(p.skip_reason || '').trim();
-            if (skip !== 'deactivated') return base;
+            if (skip !== 'deactivated') return title;
 
             const msg = String(p.deactivated_message || '').trim();
-            if (!msg) return base;
+            if (!msg) return title;
 
             const max = 300;
             const clipped = msg.length > max ? (msg.slice(0, max) + '...') : msg;
-            return `${base}\n${clipped}`;
+            title = `${title}\n${clipped}`;
+            return title;
         },
 
         async loadProviders() {

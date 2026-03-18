@@ -21,6 +21,7 @@ type ClientRuntimeSnapshot struct {
 
 	CurrentProvider string
 	LastSwitch      *ProviderSwitchEvent
+	LastRequest     *RequestOutcomeEvent
 
 	Providers []ProviderRuntimeSnapshot
 }
@@ -84,6 +85,11 @@ func (cp *ClientProxy) runtimeSnapshot(now time.Time) ClientRuntimeSnapshot {
 		ls := cp.lastSwitch
 		lastSwitch = &ls
 	}
+	var lastRequest *RequestOutcomeEvent
+	if !cp.lastRequest.At.IsZero() {
+		lr := cp.lastRequest
+		lastRequest = &lr
+	}
 
 	return ClientRuntimeSnapshot{
 		Mode:           string(cp.mode),
@@ -98,7 +104,8 @@ func (cp *ClientProxy) runtimeSnapshot(now time.Time) ClientRuntimeSnapshot {
 			}
 			return cp.providers[idx].Name
 		}(),
-		LastSwitch: lastSwitch,
-		Providers:  providers,
+		LastSwitch:  lastSwitch,
+		LastRequest: lastRequest,
+		Providers:   providers,
 	}
 }

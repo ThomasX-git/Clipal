@@ -36,6 +36,18 @@ type ProviderSwitchEvent struct {
 	Status int
 }
 
+type RequestOutcomeEvent struct {
+	At       time.Time
+	Provider string
+	Status   int
+	Delivery string
+	Protocol string
+	Cause    string
+	Bytes    int
+	Result   string
+	Detail   string
+}
+
 // Router manages multiple client proxies
 type Router struct {
 	cfg        *config.Config
@@ -74,8 +86,9 @@ type ClientProxy struct {
 	reactivateAfter  time.Duration
 	upstreamIdle     time.Duration
 
-	breakers   []*circuitBreaker
-	lastSwitch ProviderSwitchEvent
+	breakers    []*circuitBreaker
+	lastSwitch  ProviderSwitchEvent
+	lastRequest RequestOutcomeEvent
 }
 
 // Close releases resources held by the ClientProxy.
@@ -97,6 +110,11 @@ func NewRouter(cfg *config.Config) *Router {
 		upstreamIdle = 3 * time.Minute
 		logger.Warn("invalid upstream_idle_timeout %q, defaulting to 3m", cfg.Global.UpstreamIdleTimeout)
 	}
+	respHeaderTimeout, err := time.ParseDuration(cfg.Global.ResponseHeaderTimeout)
+	if err != nil || respHeaderTimeout < 0 {
+		respHeaderTimeout = 2 * time.Minute
+		logger.Warn("invalid response_header_timeout %q, defaulting to 2m", cfg.Global.ResponseHeaderTimeout)
+	}
 	cbCfg := normalizeCircuitBreakerConfig(cfg.Global.CircuitBreaker)
 	r := &Router{
 		cfg:        cfg,
@@ -109,23 +127,23 @@ func NewRouter(cfg *config.Config) *Router {
 	// Initialize client proxies
 	claudeProviders := config.GetEnabledProviders(cfg.ClaudeCode)
 	if len(claudeProviders) > 0 {
-		r.proxies[ClientClaudeCode] = newClientProxy(ClientClaudeCode, cfg.ClaudeCode.Mode, cfg.ClaudeCode.PinnedProvider, claudeProviders, reactivateAfter, upstreamIdle, cbCfg)
+		r.proxies[ClientClaudeCode] = newClientProxy(ClientClaudeCode, cfg.ClaudeCode.Mode, cfg.ClaudeCode.PinnedProvider, claudeProviders, reactivateAfter, upstreamIdle, respHeaderTimeout, cbCfg)
 	}
 
 	codexProviders := config.GetEnabledProviders(cfg.Codex)
 	if len(codexProviders) > 0 {
-		r.proxies[ClientCodex] = newClientProxy(ClientCodex, cfg.Codex.Mode, cfg.Codex.PinnedProvider, codexProviders, reactivateAfter, upstreamIdle, cbCfg)
+		r.proxies[ClientCodex] = newClientProxy(ClientCodex, cfg.Codex.Mode, cfg.Codex.PinnedProvider, codexProviders, reactivateAfter, upstreamIdle, respHeaderTimeout, cbCfg)
 	}
 
 	geminiProviders := config.GetEnabledProviders(cfg.Gemini)
 	if len(geminiProviders) > 0 {
-		r.proxies[ClientGemini] = newClientProxy(ClientGemini, cfg.Gemini.Mode, cfg.Gemini.PinnedProvider, geminiProviders, reactivateAfter, upstreamIdle, cbCfg)
+		r.proxies[ClientGemini] = newClientProxy(ClientGemini, cfg.Gemini.Mode, cfg.Gemini.PinnedProvider, geminiProviders, reactivateAfter, upstreamIdle, respHeaderTimeout, cbCfg)
 	}
 
 	return r
 }
 
-func newClientProxy(clientType ClientType, mode config.ClientMode, pinnedProvider string, providers []config.Provider, reactivateAfter time.Duration, upstreamIdle time.Duration, cbCfg circuitBreakerConfig) *ClientProxy {
+func newClientProxy(clientType ClientType, mode config.ClientMode, pinnedProvider string, providers []config.Provider, reactivateAfter time.Duration, upstreamIdle time.Duration, responseHeaderTimeout time.Duration, cbCfg circuitBreakerConfig) *ClientProxy {
 	dialer := &net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
@@ -176,7 +194,7 @@ func newClientProxy(clientType ClientType, mode config.ClientMode, pinnedProvide
 				MaxIdleConnsPerHost:   10,
 				IdleConnTimeout:       90 * time.Second,
 				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 2 * time.Minute,
+				ResponseHeaderTimeout: responseHeaderTimeout,
 				ExpectContinueTimeout: 1 * time.Second,
 				// Keep response bytes unchanged unless the client explicitly asks for compression.
 				DisableCompression: true,
@@ -400,17 +418,22 @@ func (r *Router) reloadProviderConfigsLocked() {
 		upstreamIdle = 3 * time.Minute
 		logger.Warn("invalid upstream_idle_timeout %q, defaulting to 3m", newCfg.Global.UpstreamIdleTimeout)
 	}
+	respHeaderTimeout, err := time.ParseDuration(newCfg.Global.ResponseHeaderTimeout)
+	if err != nil || respHeaderTimeout < 0 {
+		respHeaderTimeout = 2 * time.Minute
+		logger.Warn("invalid response_header_timeout %q, defaulting to 2m", newCfg.Global.ResponseHeaderTimeout)
+	}
 	cbCfg := normalizeCircuitBreakerConfig(newCfg.Global.CircuitBreaker)
 
 	newProxies := make(map[ClientType]*ClientProxy)
 	if ps := config.GetEnabledProviders(newCfg.ClaudeCode); len(ps) > 0 {
-		newProxies[ClientClaudeCode] = newClientProxy(ClientClaudeCode, newCfg.ClaudeCode.Mode, newCfg.ClaudeCode.PinnedProvider, ps, reactivateAfter, upstreamIdle, cbCfg)
+		newProxies[ClientClaudeCode] = newClientProxy(ClientClaudeCode, newCfg.ClaudeCode.Mode, newCfg.ClaudeCode.PinnedProvider, ps, reactivateAfter, upstreamIdle, respHeaderTimeout, cbCfg)
 	}
 	if ps := config.GetEnabledProviders(newCfg.Codex); len(ps) > 0 {
-		newProxies[ClientCodex] = newClientProxy(ClientCodex, newCfg.Codex.Mode, newCfg.Codex.PinnedProvider, ps, reactivateAfter, upstreamIdle, cbCfg)
+		newProxies[ClientCodex] = newClientProxy(ClientCodex, newCfg.Codex.Mode, newCfg.Codex.PinnedProvider, ps, reactivateAfter, upstreamIdle, respHeaderTimeout, cbCfg)
 	}
 	if ps := config.GetEnabledProviders(newCfg.Gemini); len(ps) > 0 {
-		newProxies[ClientGemini] = newClientProxy(ClientGemini, newCfg.Gemini.Mode, newCfg.Gemini.PinnedProvider, ps, reactivateAfter, upstreamIdle, cbCfg)
+		newProxies[ClientGemini] = newClientProxy(ClientGemini, newCfg.Gemini.Mode, newCfg.Gemini.PinnedProvider, ps, reactivateAfter, upstreamIdle, respHeaderTimeout, cbCfg)
 	}
 
 	r.mu.Lock()

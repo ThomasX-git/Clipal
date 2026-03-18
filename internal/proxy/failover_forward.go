@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -29,6 +30,36 @@ func nextProviderName(cp *ClientProxy, fromIndex int) (idx int, name string) {
 	return idx, n
 }
 
+func (cp *ClientProxy) announceProviderSwitch(from string, to string, reason string, status int) {
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if from == "" || to == "" || from == to {
+		return
+	}
+	switchView := DescribeProviderSwitch(from, to, reason, status)
+	logger.Info("[%s] %s. %s", cp.clientType, switchView.Label, switchView.Detail)
+	cp.recordProviderSwitch(from, to, reason, status)
+	notify.ProviderSwitched(string(cp.clientType), switchView.Label, switchView.Detail)
+}
+
+func unavailableRequestStatus(reason string) (result string, status int, detail string) {
+	if reason == "rate_limit" || reason == "overloaded" {
+		return "all_providers_unavailable", http.StatusTooManyRequests, "All providers are rate limited; retry later."
+	}
+	return "all_providers_unavailable", http.StatusServiceUnavailable, "All providers are temporarily unavailable; retry later."
+}
+
+func describeRequestBuildFailure(provider string, err error) string {
+	msg := "local request setup failed"
+	if err != nil {
+		msg = truncateString(sanitizeLogString(err.Error()), 512)
+	}
+	if strings.TrimSpace(provider) == "" {
+		return "Request could not be prepared locally: " + msg
+	}
+	return fmt.Sprintf("%s request could not be prepared locally: %s", provider, msg)
+}
+
 // forwardWithFailover forwards the request with automatic failover.
 func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Request, path string) {
 	if cp.mode == config.ClientModeManual {
@@ -49,9 +80,11 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 		logger.Error("[%s] failed to read request body: %v", cp.clientType, err)
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
+			cp.recordTerminalRequest(time.Now(), "", http.StatusRequestEntityTooLarge, "request_rejected", "Request body too large.")
 			writeProxyError(w, "Request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
+		cp.recordTerminalRequest(time.Now(), "", http.StatusBadRequest, "request_rejected", "Failed to read request body.")
 		writeProxyError(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
@@ -60,6 +93,12 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 	// Atomically get active count and start index to avoid TOCTOU race.
 	active, startIndex := cp.getActiveCountAndStartIndex()
 	if active == 0 {
+		if wait, reason, ok := cp.timeUntilNextAvailable(); ok && wait > 0 {
+			result, status, detail := unavailableRequestStatus(reason)
+			cp.recordTerminalRequest(time.Now(), "", status, result, detail)
+		} else {
+			cp.recordTerminalRequest(time.Now(), "", http.StatusServiceUnavailable, "all_providers_unavailable", "All providers are unavailable.")
+		}
 		if handled := cp.handleAllUnavailable(w); handled {
 			return
 		}
@@ -69,9 +108,11 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 	}
 
 	attempted := 0
-	originProvider := ""
 	lastSwitchReason := ""
 	lastSwitchStatus := 0
+	lastFailedProvider := ""
+	attemptSummaries := make([]string, 0, active)
+	hadUpstreamAttempt := false
 
 	for offset := 0; offset < len(cp.providers) && attempted < active; offset++ {
 		if err := req.Context().Err(); err != nil {
@@ -88,9 +129,6 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 			continue
 		}
 		provider := cp.providers[index]
-		if originProvider == "" {
-			originProvider = provider.Name
-		}
 
 		attempted++
 		logger.Debug("[%s] forwarding to: %s (attempt %d/%d)", cp.clientType, provider.Name, attempted, active)
@@ -101,11 +139,15 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 		reqWithAttemptCtx := req.WithContext(attemptCtx)
 		proxyReq, err := cp.createProxyRequest(reqWithAttemptCtx, provider, path, bodyBytes)
 		if err != nil {
-			logger.Error("[%s] failed to create request for %s: %v", cp.clientType, provider.Name, err)
+			summary := describeRequestBuildFailure(provider.Name, err)
+			attemptSummaries = append(attemptSummaries, summary)
+			lastFailedProvider = provider.Name
+			logger.Error("[%s] %s", cp.clientType, summary)
 			cp.releaseCircuitPermit(index, allow.usedProbe)
 			cancelAttempt(nil)
 			continue
 		}
+		hadUpstreamAttempt = true
 
 		// Ensure the body can be retried (http.Request may be reused by the transport).
 		proxyReq.GetBody = func() (io.ReadCloser, error) {
@@ -125,13 +167,19 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 			cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "network")
 			cancelAttempt(nil)
 			nextIndex, nextName := nextProviderName(cp, index)
+			summary := describeAttemptFailure(provider.Name, "network", 0, true)
+			attemptSummaries = append(attemptSummaries, summary)
 			if nextName != "" {
-				logger.Warn("[%s] %s failed (network): %v; trying next=%s", cp.clientType, provider.Name, err, nextName)
+				logger.Warn("[%s] %s; trying next=%s", cp.clientType, summary, nextName)
 			} else {
-				logger.Warn("[%s] %s failed (network): %v; trying next provider", cp.clientType, provider.Name, err)
+				logger.Warn("[%s] %s; trying next provider", cp.clientType, summary)
 			}
 			lastSwitchReason = "network"
 			lastSwitchStatus = 0
+			lastFailedProvider = provider.Name
+			if nextName != "" {
+				cp.announceProviderSwitch(provider.Name, nextName, lastSwitchReason, lastSwitchStatus)
+			}
 			cp.setCurrentIndex(nextIndex)
 			continue
 		}
@@ -160,25 +208,32 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 			cancelAttempt(nil)
 			lastSwitchReason = reason
 			lastSwitchStatus = resp.StatusCode
+			lastFailedProvider = provider.Name
 			nextIndex, nextName := nextProviderName(cp, index)
+			summary := describeAttemptFailure(provider.Name, reason, resp.StatusCode, false)
+			attemptSummaries = append(attemptSummaries, summary)
 			switch action {
 			case failureDeactivateAndRetryNext:
 				cp.deactivateFor(index, reason, resp.StatusCode, msg, cp.reactivateAfter)
 				if nextName != "" {
-					logger.Error("[%s] %s deactivated (%s): %d %s; trying next=%s", cp.clientType, provider.Name, reason, resp.StatusCode, msg, nextName)
+					logger.Error("[%s] %s; marking provider unavailable and trying next=%s", cp.clientType, summary, nextName)
 				} else {
-					logger.Error("[%s] %s deactivated (%s): %d %s; trying next provider", cp.clientType, provider.Name, reason, resp.StatusCode, msg)
+					logger.Error("[%s] %s; marking provider unavailable and trying next provider", cp.clientType, summary)
 				}
 			case failureRetryNext:
+				summaryWithCooldown := summary
 				if cooldown > 0 {
 					cp.deactivateFor(index, reason, resp.StatusCode, msg, cooldown)
-					logger.Warn("[%s] %s cooling down for %s (%s): %d %s", cp.clientType, provider.Name, cooldown, reason, resp.StatusCode, msg)
+					summaryWithCooldown = fmt.Sprintf("%s; cooling down for %s", summary, cooldown)
 				}
 				if nextName != "" {
-					logger.Warn("[%s] %s failed (%s): %d %s; trying next=%s", cp.clientType, provider.Name, reason, resp.StatusCode, msg, nextName)
+					logger.Warn("[%s] %s; trying next=%s", cp.clientType, summaryWithCooldown, nextName)
 				} else {
-					logger.Warn("[%s] %s failed (%s): %d %s; trying next provider", cp.clientType, provider.Name, reason, resp.StatusCode, msg)
+					logger.Warn("[%s] %s; trying next provider", cp.clientType, summaryWithCooldown)
 				}
+			}
+			if nextName != "" {
+				cp.announceProviderSwitch(provider.Name, nextName, lastSwitchReason, lastSwitchStatus)
 			}
 			cp.setCurrentIndex(nextIndex)
 			continue
@@ -190,46 +245,66 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 		// Found a working provider.
 		onCommit := func() {
 			cp.setCurrentIndex(index)
-			if attempted > 1 && originProvider != "" && originProvider != provider.Name {
-				logger.Info("[%s] provider switched: %s -> %s (%s %d)", cp.clientType, originProvider, provider.Name, lastSwitchReason, lastSwitchStatus)
-				cp.recordProviderSwitch(originProvider, provider.Name, lastSwitchReason, lastSwitchStatus)
-				notify.ProviderSwitched(string(cp.clientType), originProvider, provider.Name, lastSwitchReason, lastSwitchStatus)
-			}
 		}
 
-		if committed := cp.streamResponseToClient(w, resp, req, attemptCtx, cancelAttempt, index, allow, onCommit); committed {
-			if resp.StatusCode == http.StatusOK {
-				logger.Info("[%s] request completed via %s", cp.clientType, provider.Name)
-			}
+		result := cp.streamResponseToClient(w, resp, req, attemptCtx, cancelAttempt, index, allow, onCommit)
+		if result.kind == streamFinal {
+			cp.logRequestResult(provider.Name, resp.StatusCode, result, false)
 			return
 		}
 
 		// Failed before committing headers (e.g. idle timeout during first byte read).
 		// Failover to next provider.
 		if isUpstreamIdleTimeout(attemptCtx, attemptCtx.Err()) {
-			logger.Warn("[%s] %s no body bytes for %s, switching to next provider", cp.clientType, provider.Name, cp.upstreamIdle)
+			summary := describeAttemptFailure(provider.Name, "idle_timeout", 0, true)
+			attemptSummaries = append(attemptSummaries, summary)
+			logger.Warn("[%s] %s; trying next provider", cp.clientType, summary)
 			lastSwitchReason = "idle_timeout"
 			lastSwitchStatus = 0
+			lastFailedProvider = provider.Name
 			cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "idle_timeout")
 		} else {
-			logger.Warn("[%s] %s response read failed before body; switching to next provider", cp.clientType, provider.Name)
+			summary := describeAttemptFailure(provider.Name, "network", 0, true)
+			attemptSummaries = append(attemptSummaries, summary)
+			logger.Warn("[%s] %s; trying next provider", cp.clientType, summary)
 			lastSwitchReason = "network"
 			lastSwitchStatus = 0
+			lastFailedProvider = provider.Name
 			cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "network")
 		}
 		cancelAttempt(nil)
-		cp.setCurrentIndex(cp.nextActiveIndex(index))
+		nextIndex, nextName := nextProviderName(cp, index)
+		if nextName != "" {
+			cp.announceProviderSwitch(provider.Name, nextName, lastSwitchReason, lastSwitchStatus)
+		}
+		cp.setCurrentIndex(nextIndex)
 		continue
 	}
 
 	// If we've cooled down all providers during this request, surface a Retry-After to the client.
 	if cp.activeProviderCount() == 0 {
+		if wait, reason, ok := cp.timeUntilNextAvailable(); ok && wait > 0 {
+			result, status, detail := unavailableRequestStatus(reason)
+			cp.recordTerminalRequest(time.Now(), "", status, result, detail)
+		}
 		if handled := cp.handleAllUnavailable(w); handled {
 			return
 		}
 	}
 
-	logger.Error("[%s] all providers failed", cp.clientType)
+	lastProvider := strings.TrimSpace(lastFailedProvider)
+	terminalResult := "all_providers_failed"
+	terminalStatus := http.StatusServiceUnavailable
+	if !hadUpstreamAttempt {
+		terminalResult = "request_rejected"
+		terminalStatus = http.StatusBadGateway
+	}
+	cp.recordTerminalRequest(time.Now(), lastProvider, terminalStatus, terminalResult, strings.Join(attemptSummaries, "; "))
+	if len(attemptSummaries) > 0 {
+		logger.Error("[%s] all providers failed: %s", cp.clientType, strings.Join(attemptSummaries, "; "))
+	} else {
+		logger.Error("[%s] all providers failed", cp.clientType)
+	}
 	writeProxyError(w, "All providers failed", http.StatusServiceUnavailable)
 }
 
@@ -275,6 +350,8 @@ func (cp *ClientProxy) forwardCountTokensWithFailover(w http.ResponseWriter, req
 	}
 
 	attempted := 0
+	attemptSummaries := make([]string, 0, active)
+	hadUpstreamAttempt := false
 
 	for offset := 0; offset < len(cp.providers) && attempted < active; offset++ {
 		if err := req.Context().Err(); err != nil {
@@ -300,12 +377,15 @@ func (cp *ClientProxy) forwardCountTokensWithFailover(w http.ResponseWriter, req
 
 		proxyReq, err := cp.createProxyRequest(reqWithAttemptCtx, provider, path, bodyBytes)
 		if err != nil {
-			logger.Error("[%s] failed to create request for %s: %v", cp.clientType, provider.Name, err)
+			summary := describeRequestBuildFailure(provider.Name, err)
+			attemptSummaries = append(attemptSummaries, summary)
+			logger.Error("[%s] %s during count_tokens", cp.clientType, summary)
 			cp.setCountTokensIndex(cp.nextActiveIndex(index))
 			cp.releaseCircuitPermit(index, allow.usedProbe)
 			cancelAttempt(nil)
 			continue
 		}
+		hadUpstreamAttempt = true
 
 		proxyReq.GetBody = func() (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
@@ -321,10 +401,12 @@ func (cp *ClientProxy) forwardCountTokensWithFailover(w http.ResponseWriter, req
 			cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "network")
 			cancelAttempt(nil)
 			nextIndex, nextName := nextProviderName(cp, index)
+			summary := describeAttemptFailure(provider.Name, "network", 0, true)
+			attemptSummaries = append(attemptSummaries, summary)
 			if nextName != "" {
-				logger.Warn("[%s] %s failed (count_tokens network): %v; trying next=%s", cp.clientType, provider.Name, err, nextName)
+				logger.Warn("[%s] %s during count_tokens; trying next=%s", cp.clientType, summary, nextName)
 			} else {
-				logger.Warn("[%s] %s failed (count_tokens network): %v; trying next provider", cp.clientType, provider.Name, err)
+				logger.Warn("[%s] %s during count_tokens; trying next provider", cp.clientType, summary)
 			}
 			cp.setCountTokensIndex(nextIndex)
 			continue
@@ -339,10 +421,12 @@ func (cp *ClientProxy) forwardCountTokensWithFailover(w http.ResponseWriter, req
 			cp.recordCircuitFailureFromClassification(time.Now(), index, allow.usedProbe, "auth")
 			nextIndex, nextName := nextProviderName(cp, index)
 			cp.setCountTokensIndex(nextIndex)
+			summary := describeAttemptFailure(provider.Name, "auth", resp.StatusCode, false)
+			attemptSummaries = append(attemptSummaries, summary)
 			if nextName != "" {
-				logger.Error("[%s] %s deactivated (count_tokens auth): %d %s; trying next=%s", cp.clientType, provider.Name, resp.StatusCode, msg, nextName)
+				logger.Error("[%s] %s during count_tokens; marking provider unavailable and trying next=%s", cp.clientType, summary, nextName)
 			} else {
-				logger.Error("[%s] %s deactivated (count_tokens auth): %d %s; trying next provider", cp.clientType, provider.Name, resp.StatusCode, msg)
+				logger.Error("[%s] %s during count_tokens; marking provider unavailable and trying next provider", cp.clientType, summary)
 			}
 			cancelAttempt(nil)
 			continue
@@ -354,16 +438,18 @@ func (cp *ClientProxy) forwardCountTokensWithFailover(w http.ResponseWriter, req
 			cp.recordCircuitFailureFromClassification(time.Now(), index, allow.usedProbe, "billing")
 			nextIndex, nextName := nextProviderName(cp, index)
 			cp.setCountTokensIndex(nextIndex)
+			summary := describeAttemptFailure(provider.Name, "billing", resp.StatusCode, false)
+			attemptSummaries = append(attemptSummaries, summary)
 			if nextName != "" {
-				logger.Error("[%s] %s deactivated (count_tokens billing): %d %s; trying next=%s", cp.clientType, provider.Name, resp.StatusCode, msg, nextName)
+				logger.Error("[%s] %s during count_tokens; marking provider unavailable and trying next=%s", cp.clientType, summary, nextName)
 			} else {
-				logger.Error("[%s] %s deactivated (count_tokens billing): %d %s; trying next provider", cp.clientType, provider.Name, resp.StatusCode, msg)
+				logger.Error("[%s] %s during count_tokens; marking provider unavailable and trying next provider", cp.clientType, summary)
 			}
 			cancelAttempt(nil)
 			continue
 		}
 		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
-			msg := readAndTruncateResponse(resp, 2048)
+			_ = readAndTruncateResponse(resp, 2048)
 			resp.Body.Close()
 			if resp.StatusCode >= 500 {
 				cp.recordCircuitFailureFromClassification(time.Now(), index, allow.usedProbe, "server")
@@ -372,10 +458,16 @@ func (cp *ClientProxy) forwardCountTokensWithFailover(w http.ResponseWriter, req
 			}
 			nextIndex, nextName := nextProviderName(cp, index)
 			cp.setCountTokensIndex(nextIndex)
+			reason := "rate_limit"
+			if resp.StatusCode >= 500 {
+				reason = "server"
+			}
+			summary := describeAttemptFailure(provider.Name, reason, resp.StatusCode, false)
+			attemptSummaries = append(attemptSummaries, summary)
 			if nextName != "" {
-				logger.Warn("[%s] %s failed (count_tokens): %d %s; trying next=%s", cp.clientType, provider.Name, resp.StatusCode, msg, nextName)
+				logger.Warn("[%s] %s during count_tokens; trying next=%s", cp.clientType, summary, nextName)
 			} else {
-				logger.Warn("[%s] %s failed (count_tokens): %d %s; trying next provider", cp.clientType, provider.Name, resp.StatusCode, msg)
+				logger.Warn("[%s] %s during count_tokens; trying next provider", cp.clientType, summary)
 			}
 			cancelAttempt(nil)
 			continue
@@ -386,7 +478,8 @@ func (cp *ClientProxy) forwardCountTokensWithFailover(w http.ResponseWriter, req
 			cp.setCountTokensIndex(index)
 		}
 
-		if committed := cp.streamResponseToClient(w, resp, req, attemptCtx, cancelAttempt, index, allow, onCommit); committed {
+		result := cp.streamResponseToClient(w, resp, req, attemptCtx, cancelAttempt, index, allow, onCommit)
+		if result.kind == streamFinal {
 			return
 		}
 
@@ -396,16 +489,26 @@ func (cp *ClientProxy) forwardCountTokensWithFailover(w http.ResponseWriter, req
 			cp.releaseCircuitPermit(index, allow.usedProbe)
 			return
 		}
-		logger.Warn("[%s] %s response read failed before body (count_tokens), trying next provider", cp.clientType, provider.Name)
+		reason := "network"
 		if isUpstreamIdleTimeout(attemptCtx, attemptCtx.Err()) {
+			reason = "idle_timeout"
 			cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "idle_timeout")
 		} else {
 			cp.recordCircuitFailure(time.Now(), index, allow.usedProbe, "network")
 		}
+		summary := describeAttemptFailure(provider.Name, reason, 0, true)
+		attemptSummaries = append(attemptSummaries, summary)
+		logger.Warn("[%s] %s during count_tokens; trying next provider", cp.clientType, summary)
 		cp.setCountTokensIndex(cp.nextActiveIndex(index))
 		continue
 	}
 
-	logger.Error("[%s] all providers failed (count_tokens)", cp.clientType)
+	if len(attemptSummaries) > 0 {
+		logger.Error("[%s] all providers failed during count_tokens: %s", cp.clientType, strings.Join(attemptSummaries, "; "))
+	} else if !hadUpstreamAttempt {
+		logger.Error("[%s] count_tokens request could not be prepared for any provider", cp.clientType)
+	} else {
+		logger.Error("[%s] all providers failed (count_tokens)", cp.clientType)
+	}
 	writeProxyError(w, "All providers failed", http.StatusServiceUnavailable)
 }
