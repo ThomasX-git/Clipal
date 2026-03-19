@@ -71,6 +71,13 @@ clipal status
 
 Then open `http://127.0.0.1:3333/` in your browser.
 
+## Example Config Files
+
+- [examples/config.yaml](examples/config.yaml)
+- [examples/claude-code.yaml](examples/claude-code.yaml)
+- [examples/codex.yaml](examples/codex.yaml)
+- [examples/gemini.yaml](examples/gemini.yaml)
+
 ## Common Commands
 
 ```bash

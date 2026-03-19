@@ -71,6 +71,13 @@ clipal status
 
 打开浏览器访问 `http://127.0.0.1:3333/`。
 
+## 示例配置文件
+
+- [examples/config.yaml](examples/config.yaml)
+- [examples/claude-code.yaml](examples/claude-code.yaml)
+- [examples/codex.yaml](examples/codex.yaml)
+- [examples/gemini.yaml](examples/gemini.yaml)
+
 ## 常用命令
 
 ```bash

@@ -18,6 +18,13 @@ gemini.yaml
 
 `config.yaml` 是全局配置，其余三个文件分别管理不同客户端分组。
 
+对应模板：
+
+- [../../examples/config.yaml](../../examples/config.yaml)
+- [../../examples/claude-code.yaml](../../examples/claude-code.yaml)
+- [../../examples/codex.yaml](../../examples/codex.yaml)
+- [../../examples/gemini.yaml](../../examples/gemini.yaml)
+
 ## 最小示例
 
 `config.yaml`：

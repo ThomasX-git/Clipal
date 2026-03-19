@@ -18,6 +18,13 @@ gemini.yaml
 
 `config.yaml` is global config. The other three files define separate client groups.
 
+Matching templates:
+
+- [../../examples/config.yaml](../../examples/config.yaml)
+- [../../examples/claude-code.yaml](../../examples/claude-code.yaml)
+- [../../examples/codex.yaml](../../examples/codex.yaml)
+- [../../examples/gemini.yaml](../../examples/gemini.yaml)
+
 ## Minimal Example
 
 `config.yaml`:

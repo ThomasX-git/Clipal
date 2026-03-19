@@ -33,6 +33,13 @@ cp examples/codex.yaml ~/.clipal/codex.yaml
 cp examples/gemini.yaml ~/.clipal/gemini.yaml
 ```
 
+直接查看模板：
+
+- [../../examples/config.yaml](../../examples/config.yaml)
+- [../../examples/claude-code.yaml](../../examples/claude-code.yaml)
+- [../../examples/codex.yaml](../../examples/codex.yaml)
+- [../../examples/gemini.yaml](../../examples/gemini.yaml)
+
 然后编辑这些文件，填入你的上游 `base_url`、`api_key` 或 `api_keys`。
 
 详细字段说明见 [配置参考](config-reference.md)。

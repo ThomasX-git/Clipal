@@ -33,6 +33,13 @@ cp examples/codex.yaml ~/.clipal/codex.yaml
 cp examples/gemini.yaml ~/.clipal/gemini.yaml
 ```
 
+Direct template links:
+
+- [../../examples/config.yaml](../../examples/config.yaml)
+- [../../examples/claude-code.yaml](../../examples/claude-code.yaml)
+- [../../examples/codex.yaml](../../examples/codex.yaml)
+- [../../examples/gemini.yaml](../../examples/gemini.yaml)
+
 Then edit those files and fill in your upstream `base_url`, `api_key`, or `api_keys`.
 
 For field details, see [Config Reference](config-reference.md).
