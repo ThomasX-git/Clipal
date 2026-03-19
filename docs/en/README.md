@@ -1,16 +1,31 @@
-# Clipal Docs (English)
+# Clipal Docs
 
 English: [docs/en/README.md](README.md) | 中文: [docs/zh/README.md](../zh/README.md)
 
-Pick your OS:
+## Where To Start
 
-- macOS: [docs/en/macos.md](macos.md)
-- Linux: [docs/en/linux.md](linux.md)
-- Windows: [docs/en/windows.md](windows.md)
+- New user: start with [Getting Started](getting-started.md)
+- Need to connect a client: see [Client Setup](client-setup.md)
+- Need config details: open [Config Reference](config-reference.md)
+- Want the GUI first: open [Web UI Guide](web-ui.md)
 
-Shared conventions:
+## Browse By Task
 
-- Default config dir: `~/.clipal/` (Windows: `%USERPROFILE%\\.clipal\\`)
-- Health check: `GET /health` (default: `http://127.0.0.1:3333/health`)
-- Status summary: `clipal status` (add `--json` for machine-readable output)
-- Client setup (Claude Code / Codex / Gemini): see the project root `README.md`
+- [Getting Started](getting-started.md)
+- [Client Setup](client-setup.md)
+- [Config Reference](config-reference.md)
+- [Web UI Guide](web-ui.md)
+- [Routing and Failover](routing-and-failover.md)
+- [Services, Status, and Updates](services.md)
+- [Troubleshooting](troubleshooting.md)
+
+## Browse By OS
+
+- [macOS](macos.md)
+- [Linux](linux.md)
+- [Windows](windows.md)
+
+## More
+
+- [Project README](../../README.md)
+- [Release Notes](../../release-notes/)

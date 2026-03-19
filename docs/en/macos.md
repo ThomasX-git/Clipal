@@ -1,21 +1,22 @@
-# macOS Guide (Intel / Apple Silicon)
+# macOS Guide
 
 English: [docs/en/macos.md](macos.md) | 中文: [docs/zh/macos.md](../zh/macos.md)
 
-## 1. Download
+This page only covers macOS-specific differences. For shared setup flow, see [Getting Started](getting-started.md).
 
-From GitHub Releases:
+## Install The Binary
 
-- Apple Silicon (M-series): `clipal-darwin-arm64`
-- Intel: `clipal-darwin-amd64`
+Apple Silicon:
 
-After downloading, renaming it to `clipal` is recommended.
+- `clipal-darwin-arm64`
 
-## 2. Put the binary in a stable location
+Intel:
 
-Choose one:
+- `clipal-darwin-amd64`
 
-**Option A: `~/bin` (most universal; no Homebrew required)**
+Recommended options:
+
+### Option A: put it in `~/bin`
 
 ```bash
 mkdir -p ~/bin
@@ -23,145 +24,76 @@ mv ~/Downloads/clipal-darwin-arm64 ~/bin/clipal
 chmod +x ~/bin/clipal
 ```
 
-Add `~/bin` to your `PATH` (skip if you already did):
+If needed, add `~/bin` to `PATH`:
 
 ```bash
 echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-**Option B: Homebrew path (Apple Silicon is usually `/opt/homebrew/bin`)**
+### Option B: put it in a Homebrew path
 
 ```bash
 sudo mv ~/Downloads/clipal-darwin-arm64 /opt/homebrew/bin/clipal
 sudo chmod +x /opt/homebrew/bin/clipal
 ```
 
-## 3. Initialize config
+## Background Operation: launchd
+
+The recommended path is the built-in command flow:
 
 ```bash
-mkdir -p ~/.clipal
-cp examples/config.yaml ~/.clipal/config.yaml
-cp examples/claude-code.yaml ~/.clipal/claude-code.yaml
-cp examples/codex.yaml ~/.clipal/codex.yaml
-cp examples/gemini.yaml ~/.clipal/gemini.yaml
-```
-
-Edit `~/.clipal/*.yaml` and replace `api_key` or `api_keys` (and `base_url` if needed) with your own.
-
-## 4. Foreground run (first-time verification)
-
-```bash
-clipal --log-level debug
-```
-
-Verify health:
-
-```bash
-curl -fsS http://127.0.0.1:3333/health
-```
-
-## 5. Background run (launchd, recommended)
-
-### 5.1 Quiet stdout + file logging
-
-Suggested `~/.clipal/config.yaml`:
-
-```yaml
-log_stdout: false
-log_retention_days: 7
-# log_dir: ""  # empty means ~/.clipal/logs by default
-```
-
-Default log dir: `~/.clipal/logs/` (daily files: `clipal-YYYY-MM-DD.log`).
-
-### 5.2 Create a LaunchAgent
-
-You can pick one of the following:
-
-- **Option A (recommended): built-in command**: `clipal service install` generates the plist and loads it via `launchctl`
-- **Option B: manual plist**: for fully customized plist
-
-#### Option A: built-in command (recommended)
-
-```bash
-clipal status
 clipal service install
 clipal service status
-clipal service status --raw
 clipal service restart
 clipal service stop
 clipal service uninstall
 ```
 
-If you already installed it and want to overwrite/update the plist:
+Useful variants:
 
 ```bash
 clipal service install --force
-```
-
-If your config dir is not `~/.clipal`:
-
-```bash
 clipal service install --config-dir /path/to/config
-```
-
-Optional (separate stdout/stderr files for crash/panic diagnostics). Keep `log_stdout: false` if you use this, otherwise you will duplicate normal logs into both Clipal's rotated files and the launchd stdout file:
-
-```bash
 clipal service install --stdout ~/.clipal/logs/launchd.out --stderr ~/.clipal/logs/launchd.err
 ```
 
-#### Option B: manual plist
+This manages:
 
-Create `~/Library/LaunchAgents/com.lansespirit.clipal.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-  <dict>
-    <key>Label</key>
-    <string>com.lansespirit.clipal</string>
-
-    <key>ProgramArguments</key>
-    <array>
-      <string>/Users/YOUR_USER/bin/clipal</string>
-      <string>--config-dir</string>
-      <string>/Users/YOUR_USER/.clipal</string>
-    </array>
-
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-  </dict>
-</plist>
+```text
+~/Library/LaunchAgents/com.lansespirit.clipal.plist
 ```
 
-Replace `/Users/YOUR_USER/...` with your real path (use `which clipal` / `echo $HOME`).
+## Manual launchd Control
 
-Load and start:
+If you want full control over the plist, you can still manage the LaunchAgent yourself.
+
+Common commands:
 
 ```bash
 launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.lansespirit.clipal.plist
 launchctl kickstart -k "gui/$(id -u)/com.lansespirit.clipal"
-```
-
-Stop and unload:
-
-```bash
 launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/com.lansespirit.clipal.plist
 ```
 
-### 5.3 Check status and logs
+## Logging Advice
 
-```bash
-curl -fsS http://127.0.0.1:3333/health
-tail -n 200 ~/.clipal/logs/clipal-$(date +%F).log
+For background operation, this is a good default in `config.yaml`:
+
+```yaml
+log_stdout: false
+log_retention_days: 7
 ```
 
-## 6. FAQ
+That avoids duplicated logs between Clipal and launchd stdout capture.
 
-- **“I see requests but I didn’t open Claude Code”**: often VS Code/Qoder extensions retry in the background; run `lsof -nP -iTCP:3333` to inspect.
-- **Security**: keep `listen_addr: 127.0.0.1` unless you really want LAN access; exposing upstream keys can be risky.
+## macOS-Specific Notes
+
+- "I see requests but I did not open Claude Code" often means an editor extension or background helper is retrying
+- To inspect port usage:
+
+```bash
+lsof -nP -iTCP:3333
+```
+
+For general issues, continue with [Troubleshooting](troubleshooting.md).

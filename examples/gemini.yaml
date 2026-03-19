@@ -1,8 +1,8 @@
-# Gemini CLI API providers configuration
-# Providers are sorted by priority (lower number = higher priority)
+# Gemini-style upstream providers
+# Used by requests sent to http://127.0.0.1:3333/gemini
 
 mode: auto # auto | manual
-pinned_provider: "" # used when mode=manual
+pinned_provider: "" # required when mode=manual
 
 providers:
   # Primary provider - Google Gemini API
@@ -15,6 +15,8 @@ providers:
   # Fallback provider - OpenRouter (Gemini models available)
   - name: "openrouter"
     base_url: "https://openrouter.ai/api"
-    api_key: "sk-or-xxx"
+    api_keys:
+      - "sk-or-xxx"
+      - "sk-or-yyy"
     priority: 2
     enabled: true

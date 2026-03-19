@@ -1,15 +1,31 @@
-# Clipal 使用指南
+# Clipal 文档
 
 English: [docs/en/README.md](../en/README.md) | 中文: [docs/zh/README.md](README.md)
 
-按系统选择：
+## 从哪里开始
 
-- macOS：[`macos.md`](macos.md)
-- Linux：[`linux.md`](linux.md)
-- Windows：[`windows.md`](windows.md)
+- 新用户：先看 [快速开始](getting-started.md)
+- 需要接入客户端：看 [客户端接入](client-setup.md)
+- 需要理解配置字段：看 [配置参考](config-reference.md)
+- 想直接用图形界面：看 [Web UI 使用说明](web-ui.md)
 
-通用约定（所有系统一致）：
+## 按任务查找
 
-- 配置目录默认是用户目录下的 `~/.clipal/`（Windows 为 `%USERPROFILE%\\.clipal\\`）
-- 健康检查：`GET /health`（默认 `http://127.0.0.1:3333/health`）
-- Claude Code / Codex / Gemini 的接入方式见项目根目录 `README.zh-CN.md`
+- [快速开始](getting-started.md)
+- [客户端接入](client-setup.md)
+- [配置参考](config-reference.md)
+- [Web UI 使用说明](web-ui.md)
+- [路由与故障切换](routing-and-failover.md)
+- [后台服务、状态与更新](services.md)
+- [排障与 FAQ](troubleshooting.md)
+
+## 按系统查找
+
+- [macOS](macos.md)
+- [Linux](linux.md)
+- [Windows](windows.md)
+
+## 其他
+
+- [项目首页 README](../../README.zh-CN.md)
+- [Release Notes](../../release-notes/)

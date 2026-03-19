@@ -1,8 +1,8 @@
-# Claude Code API providers configuration
-# Providers are sorted by priority (lower number = higher priority)
+# Claude-style upstream providers
+# Used by requests sent to http://127.0.0.1:3333/claudecode
 
 mode: auto # auto | manual
-pinned_provider: "" # used when mode=manual
+pinned_provider: "" # required when mode=manual
 
 providers:
   # Primary provider - Anthropic official API
@@ -12,10 +12,12 @@ providers:
     priority: 1
     enabled: true
 
-  # Fallback provider - OpenRouter
+  # Fallback provider - OpenRouter with multiple keys
   - name: "openrouter"
     base_url: "https://openrouter.ai/api"
-    api_key: "sk-or-xxx"
+    api_keys:
+      - "sk-or-xxx"
+      - "sk-or-yyy"
     priority: 2
     enabled: true
 

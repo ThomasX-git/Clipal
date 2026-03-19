@@ -4,168 +4,46 @@
 
 English: [README.md](README.md) | 中文: [README.zh-CN.md](README.zh-CN.md)
 
-A minimal CLI-first LLM API reverse proxy for tools like Claude Code, Codex CLI, and Gemini CLI.
+Clipal is a local LLM API reverse proxy and management tool.
 
-## What it is
+It consolidates multiple upstream providers behind local endpoints, with automatic failover, hot reload, a built-in Web UI, background service management, and multi-key support. It works well not only for Claude Code, Codex CLI, and Gemini CLI, but also for local clients that support a custom Base URL, such as Cherry Studio, Kelivo, Chatbox, and ChatWise.
 
-Clipal is a lightweight reverse proxy that routes requests to one of multiple upstream API providers based on a simple YAML configuration, with priority ordering and automatic failover.
+## What You Can Do With It
 
-## Core ideas
+- Configure multiple upstream providers per client group with priority-based failover
+- Keep separate configs for different client types or protocol styles
+- Add, edit, pin, enable, disable, and inspect providers in the Web UI
+- Configure multiple API keys per provider and retry within the same provider before moving to the next one
+- Manage local status, background services, and updates with `clipal status`, `clipal service`, and `clipal update`
+- Run as a single cross-platform binary on macOS, Linux, and Windows
 
-- **Minimal**: no DB, no history — just proxying (plus a localhost-only management UI)
-- **Transparent**: no message-format conversion; relies on upstream compatibility
-- **Portable**: single cross-platform binary
-- **Configurable**: YAML configs separated by client type
+## Web UI
 
-## Features
+![Clipal Web UI](assets/webUI.png)
 
-- Multiple upstream providers with priority ordering
-- Automatic failover (tries the next provider on errors)
-- Temporary provider deactivation on auth/quota errors, with auto-reactivation via `reactivate_after`
-- Hot reload: changes to `config.yaml` / `claude-code.yaml` / `codex.yaml` / `gemini.yaml` reload automatically
-- Local web management UI (localhost-only): provider management, global settings, status, service control
-- Log levels: `debug` / `info` / `warn` / `error`
-- Separate client configs:
-  - Claude Code (`claude-code.yaml`)
-  - Codex CLI (`codex.yaml`)
-  - Gemini CLI (`gemini.yaml`)
-- macOS / Linux / Windows support
+## Which Clients It Fits
 
-## Architecture
+Clipal currently exposes three local route groups:
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Claude Code   │     │    Codex CLI    │     │   Gemini CLI    │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                       │
-         │ /claudecode           │ /codex                │ /gemini
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         clipal (:3333)                          │
-│                                                                 │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │                       HTTP Router                         │  │
-│  │  /claudecode/*  →  claude-code.yaml providers             │  │
-│  │  /codex/*       →  codex.yaml providers                   │  │
-│  │  /gemini/*      →  gemini.yaml providers                  │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                              │                                  │
-│                              ▼                                  │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │               Endpoint Router (priority + failover)       │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                               │
-         ┌─────────────────────┼─────────────────────┐
-         ▼                     ▼                     ▼
-┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
-│  API Provider 1 │   │  API Provider 2 │   │  API Provider N │
-│  (priority: 1)  │   │  (priority: 2)  │   │  (priority: N)  │
-└─────────────────┘   └─────────────────┘   └─────────────────┘
-```
+| Local endpoint | Typical use |
+|----------------|-------------|
+| `http://127.0.0.1:3333/claudecode` | Claude Code / Claude-style requests |
+| `http://127.0.0.1:3333/codex` | Codex CLI / OpenAI-compatible clients |
+| `http://127.0.0.1:3333/gemini` | Gemini CLI / Gemini-style requests |
 
-### Route prefixes
+If a desktop client supports a custom OpenAI-compatible Base URL, `/codex` is usually the first route to try. Full compatibility still depends on the client's request format and the upstream provider's compatibility layer. See [docs/en/client-setup.md](docs/en/client-setup.md).
 
-| Path prefix | Config file | Notes |
-|------------|-------------|-------|
-| `/` | — | Web management UI (localhost-only) |
-| `/claudecode/*` | `~/.clipal/claude-code.yaml` | Claude Code upstreams |
-| `/codex/*` | `~/.clipal/codex.yaml` | Codex CLI upstreams |
-| `/gemini/*` | `~/.clipal/gemini.yaml` | Gemini CLI upstreams |
+## Quick Start
 
-## Configuration
-
-### Global config (`config.yaml`)
-
-```yaml
-listen_addr: "127.0.0.1"  # default: 127.0.0.1 (local only)
-port: 3333                # default: 3333
-log_level: "info"         # debug/info/warn/error
-reactivate_after: "1h"    # default: 1h; set to 0 to disable auto-deactivate
-upstream_idle_timeout: "3m" # default: 3m; set to 0 to disable (no body bytes received)
-response_header_timeout: "2m" # default: 2m; set to 0 to disable (wait for upstream headers)
-max_request_body_bytes: 33554432  # default: 32 MiB (request body is buffered for retries)
-log_dir: ""               # default: <config-dir>/logs
-log_retention_days: 7     # default: 7
-log_stdout: false         # recommended for long-running background service; runtime default is true
-ignore_count_tokens_failover: false # Claude Code: don't failover main chat on count_tokens failures
-
-# Circuit breaker: avoid repeatedly calling unhealthy providers
-circuit_breaker:
-  failure_threshold: 4 # set to 0 to disable
-  success_threshold: 2
-  open_timeout: "60s"
-  half_open_max_inflight: 1
-```
-
-### Client configs (`claude-code.yaml` / `codex.yaml` / `gemini.yaml`)
-
-```yaml
-mode: "auto"            # auto | manual (manual never switches)
-pinned_provider: ""      # required when mode=manual
-
-providers:
-  - name: "anthropic-direct"
-    base_url: "https://api.anthropic.com"
-    api_key: "sk-ant-xxx"
-    priority: 1
-    enabled: true
-
-  - name: "openrouter"
-    base_url: "https://openrouter.ai/api"
-    api_keys:
-      - "sk-or-xxx"
-      - "sk-or-yyy"
-    priority: 2
-    enabled: true
-```
-
-Notes:
-
-- Each provider must set either `api_key` or `api_keys`.
-- `api_keys` is an ordered list. Clipal will try the next key on auth/quota/rate-limit style failures before moving to the next provider.
-- In `manual` mode, Clipal still returns the pinned provider response directly; it does not fail over to another key or provider.
-
-## Provider selection & failover
-
-For each client (claude-code / codex / gemini), Clipal maintains an independent provider list and selects upstreams with these rules:
-
-- Only uses providers with `enabled != false`
-- Sorts by `priority` ascending (lower number = higher priority; priorities start at `1`); ties keep YAML order
-  - If `priority` is omitted (or `0`), it defaults to `1`
-- Sticky preference: a successful provider becomes the next preferred one
-- **Mode `auto` (default):** on request failure, tries the next available provider
-- **Mode `manual`:** always routes to `pinned_provider` and **never** fails over to another provider
-  - The pinned provider response is returned directly (including error status/body/headers); upstream `Retry-After` is preserved when present
-- Temporary deactivation:
-  - `401/403` auth and `402` billing/quota errors deactivate the provider and move on
-  - `429` is inspected; quota/auth-like cases deactivate, otherwise it failovers without deactivation (cooldown up to `1h`)
-- Auto-reactivation: deactivated providers are re-enabled after `reactivate_after`
-- Circuit breaker (optional):
-  - If enabled (`circuit_breaker.failure_threshold > 0`), each provider has an independent circuit (`closed` → `open` → `half_open`)
-  - When a circuit is `open`, the provider is skipped; if this makes all providers temporarily unavailable, Clipal returns `Retry-After` until it can probe again
-- Hot reload resets the provider set based on the updated config
-
-## Docs
-
-- English: [docs/README.md](docs/README.md)
-- 中文: [docs/README.zh-CN.md](docs/README.zh-CN.md)
-
-## Quick start
-
-1) Download a binary from [Releases](https://github.com/lansespirit/Clipal/releases).
-
-2) Make it executable and place it on your `PATH`:
+1. Download the right binary from [Releases](https://github.com/lansespirit/Clipal/releases).
+2. Put it on your `PATH` and verify the version:
 
 ```bash
 chmod +x clipal*
 ./clipal* --version
 ```
 
-3) Initialize config from templates:
+3. Initialize config files:
 
 ```bash
 mkdir -p ~/.clipal
@@ -175,199 +53,79 @@ cp examples/codex.yaml ~/.clipal/codex.yaml
 cp examples/gemini.yaml ~/.clipal/gemini.yaml
 ```
 
-4) Edit `~/.clipal/*.yaml` and set `api_key` or `api_keys` (and `base_url` if needed).
-
-5) Start and verify health:
+4. Edit `~/.clipal/*.yaml` and fill in your `api_key` or `api_keys`.
+5. Start Clipal:
 
 ```bash
-clipal --log-level debug
+clipal
+```
+
+6. Verify health and open the management UI:
+
+```bash
 curl -fsS http://127.0.0.1:3333/health
+clipal status
 ```
 
-6) Configure your client (Claude Code / Codex CLI / Gemini CLI) below.
+Then open `http://127.0.0.1:3333/` in your browser.
 
-## Install
-
-### Option A: prebuilt binaries (recommended)
-
-Download from [Releases](https://github.com/lansespirit/Clipal/releases).
+## Common Commands
 
 ```bash
-# macOS / Linux
-chmod +x clipal
-sudo mv clipal /usr/local/bin/
-
-# Windows
-# Put clipal.exe on PATH
-```
-
-### Option B: build from source
-
-```bash
-git clone https://github.com/lansespirit/Clipal.git
-cd Clipal
-go build -o clipal ./cmd/clipal
-sudo mv clipal /usr/local/bin/
-```
-
-## Run
-
-```bash
-# Use the default config dir (~/.clipal/)
+# Run in foreground
 clipal
 
-# Custom config dir
-clipal --config-dir /path/to/config
-
-# Override listen address
-clipal --listen-addr 0.0.0.0
-
-# Override port
-clipal --port 8080
-
-# Override log level
-clipal --log-level debug
-```
-
-## Update
-
-`clipal update` downloads the latest release binary from `lansespirit/Clipal`, verifies it via `checksums.txt`, and replaces the current executable.
-
-```bash
-clipal update
-clipal update --check
-clipal update --dry-run
-```
-
-## Run in background
-
-```bash
-# Linux/macOS - quick background run (prefer file logging)
-# Set log_stdout: false in ~/.clipal/config.yaml first, then:
-nohup clipal >/dev/null 2>&1 &
-```
-
-Check status (without starting a server):
-
-```bash
+# Inspect status
 clipal status
 clipal status --json
-```
 
-For long-running background mode on boot/logon (launchd / systemd / Task Scheduler), you can use:
-
-```bash
+# Manage background service
 clipal service install
 clipal service status
-clipal service status --raw
 clipal service restart
-clipal service stop
-clipal service uninstall
+
+# Check for updates or update in place
+clipal update --check
+clipal update
 ```
 
-For proper startup on boot (systemd / launchd / Task Scheduler), see:
+## Documentation
 
-- [macOS](docs/en/macos.md)
-- [Linux](docs/en/linux.md)
-- [Windows](docs/en/windows.md)
+- [Getting Started](docs/en/getting-started.md)
+- [Client Setup](docs/en/client-setup.md)
+- [Config Reference](docs/en/config-reference.md)
+- [Web UI Guide](docs/en/web-ui.md)
+- [Routing and Failover](docs/en/routing-and-failover.md)
+- [Services, Status, and Updates](docs/en/services.md)
+- [Troubleshooting](docs/en/troubleshooting.md)
+- [macOS](docs/en/macos.md) / [Linux](docs/en/linux.md) / [Windows](docs/en/windows.md)
+- [Docs Home](docs/en/README.md)
+- [Release Notes](release-notes/)
 
-## Client setup
+## Config Directory
 
-### Claude Code
+Default config directory:
 
-Edit `~/.claude/settings.json`:
+- macOS / Linux: `~/.clipal/`
+- Windows: `%USERPROFILE%\\.clipal\\`
 
-```json
-{
-  "env": {
-    "ANTHROPIC_AUTH_TOKEN": "any-value",
-    "ANTHROPIC_BASE_URL": "http://127.0.0.1:3333/claudecode"
-  }
-}
+Default files:
+
+```text
+~/.clipal/
+├── config.yaml
+├── claude-code.yaml
+├── codex.yaml
+└── gemini.yaml
 ```
 
-### Codex CLI
+Field details, examples, and behavior notes live in [docs/en/config-reference.md](docs/en/config-reference.md).
 
-Edit `~/.codex/config.toml`:
+## Security Notes
 
-```toml
-model_provider = "clipal"
-
-[model_providers.clipal]
-name = "clipal"
-base_url = "http://localhost:3333/codex"
-```
-
-### Gemini CLI
-
-```bash
-export GEMINI_API_BASE="http://localhost:3333/gemini"
-```
-
-## Logging
-
-Clipal supports daily-rotated file logging and optional stdout logging. For long-running background service mode, we recommend keeping the rotated file logs and disabling stdout logging.
-
-- Default log dir: `<config-dir>/logs` (e.g. `~/.clipal/logs`)
-- Log file: `clipal-YYYY-MM-DD.log`
-
-Recommended `~/.clipal/config.yaml` for background service mode:
-
-```yaml
-log_stdout: false
-log_retention_days: 7
-# log_dir: ""  # empty means ~/.clipal/logs by default
-```
-
-If `log_stdout: true` is combined with launchd/systemd stdout redirection, you may get duplicate logs and non-rotated stdout log files.
-
-## Project layout
-
-```
-clipal/
-├── cmd/
-│   └── clipal/
-│       └── main.go           # entrypoint
-├── internal/
-│   ├── config/
-│   │   └── config.go         # YAML config loading
-│   ├── proxy/
-│   │   ├── proxy.go          # routing + request building
-│   │   └── failover.go       # failover + de/activation logic
-│   └── logger/
-│       └── logger.go         # logging
-├── build/                    # build outputs
-├── scripts/
-│   └── build.sh              # cross-platform build script
-├── go.mod
-├── go.sum
-└── README.md
-```
-
-## Development
-
-```bash
-go build -o clipal ./cmd/clipal
-go test ./...
-
-# Note: Go writes build/test caches under GOCACHE.
-# If you run in a restricted environment, use a temp dir for GOCACHE:
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/go-build-cache.XXXXXX)"
-GOCACHE="$tmp" go test ./...
-rm -rf "$tmp"
-
-./scripts/build.sh
-```
-
-### Supported platforms
-
-| OS | Arch | Artifact name |
-|----|------|----------------|
-| macOS | amd64 | `clipal-darwin-amd64` |
-| macOS | arm64 | `clipal-darwin-arm64` |
-| Linux | amd64 | `clipal-linux-amd64` |
-| Linux | arm64 | `clipal-linux-arm64` |
-| Windows | amd64 | `clipal-windows-amd64.exe` |
+- The proxy listens on `127.0.0.1:3333` by default
+- The Web UI is localhost-only, even if the proxy itself listens on `0.0.0.0` or `::`
+- Clipal overrides upstream auth headers from local provider config, so placeholder client-side API keys are usually fine
 
 ## License
 

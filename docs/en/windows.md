@@ -1,20 +1,22 @@
-# Windows Guide (PowerShell / Task Scheduler / Service)
+# Windows Guide
 
 English: [docs/en/windows.md](windows.md) | 中文: [docs/zh/windows.md](../zh/windows.md)
 
-## 1. Download
+This page only covers Windows-specific differences. For the shared setup flow, see [Getting Started](getting-started.md).
 
-From GitHub Releases: `clipal-windows-amd64.exe`
+## Install The Binary
 
-Renaming it to `clipal.exe` is recommended.
+Download from Releases:
 
-## 2. Location and `PATH`
+- `clipal-windows-amd64.exe`
 
-Put it under a stable directory, for example:
+Rename it to `clipal.exe` and place it somewhere like:
 
-`C:\\Users\\<YOU>\\bin\\clipal.exe`
+```text
+C:\Users\<YOU>\bin\clipal.exe
+```
 
-Then add `C:\\Users\\<YOU>\\bin` to your user `PATH`.
+Then add that directory to your user `PATH`.
 
 Verify:
 
@@ -22,124 +24,56 @@ Verify:
 clipal.exe --version
 ```
 
-## 3. Initialize config
+## Background Operation: Task Scheduler
 
-Default config dir:
-
-`%USERPROFILE%\\.clipal\\`
-
-Copy templates from `examples\\`:
+The recommended path is the built-in command flow:
 
 ```powershell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\\.clipal" | Out-Null
-Copy-Item .\\examples\\config.yaml "$env:USERPROFILE\\.clipal\\config.yaml" -Force
-Copy-Item .\\examples\\claude-code.yaml "$env:USERPROFILE\\.clipal\\claude-code.yaml" -Force
-Copy-Item .\\examples\\codex.yaml "$env:USERPROFILE\\.clipal\\codex.yaml" -Force
-Copy-Item .\\examples\\gemini.yaml "$env:USERPROFILE\\.clipal\\gemini.yaml" -Force
+clipal.exe service install
+clipal.exe service status
+clipal.exe service restart
+clipal.exe service stop
+clipal.exe service uninstall
 ```
 
-Edit `api_key` or `api_keys` with your real value.
-
-## 4. Foreground run (first-time verification)
+Useful variants:
 
 ```powershell
-clipal.exe --log-level debug
+clipal.exe service install --force
+clipal.exe service install --config-dir C:\path\to\config
+clipal.exe service install --dry-run
 ```
 
-In another PowerShell, check health:
+The installed task uses `--detach-console` for background operation.
 
-```powershell
-# Default port is 3333. If you changed `port` in config.yaml, use that port here.
-Invoke-WebRequest http://127.0.0.1:3333/health | Select-Object -Expand Content
-```
+## Manual Task Setup
 
-## 5. Background run (Task Scheduler, recommended)
+If you want to manage Task Scheduler yourself:
 
-### 5.1 Quiet stdout + file logging
+- Program: `C:\Users\<YOU>\bin\clipal.exe`
+- Arguments: `--detach-console --config-dir C:\Users\<YOU>\.clipal`
+- Trigger: at logon
 
-In `%USERPROFILE%\\.clipal\\config.yaml`:
+## Running As A Real Windows Service
+
+If you need startup before login, you can wrap Clipal with a third-party tool such as NSSM.
+
+Clipal itself ships with the Task Scheduler approach, not a built-in NSSM wrapper.
+
+## Logging Advice
+
+For background operation, this is a good default in `config.yaml`:
 
 ```yaml
 log_stdout: false
 log_retention_days: 7
 ```
 
-Default log dir: `%USERPROFILE%\\.clipal\\logs\\`
+## Windows-Specific Notes
 
-### 5.2 Create a “Start at logon” task
+- the Task Scheduler run user must match the user that owns the config directory
+- `--config-dir` is easy to point at the wrong place
+- the health check port must match the configured `port`
+- older builds may show noisy permission warnings that are usually harmless on Windows
 
-You can pick one of the following:
-
-- **Option A (recommended): built-in command**: `clipal.exe service install` creates a “Start at logon” task via `schtasks.exe`
-- **Option B: manual UI**: for customized task settings
-
-#### Option A: built-in command (recommended)
-
-```powershell
-clipal.exe status
-clipal.exe service install
-
-# Show the underlying actions without executing:
-clipal.exe service install --dry-run
-# (flags can also appear before the action)
-clipal.exe service --dry-run install
-
-clipal.exe service status
-clipal.exe service status --raw
-clipal.exe service restart
-clipal.exe service stop
-clipal.exe service uninstall
-```
-
-The installed task runs clipal with `--detach-console` so it keeps running in the background (closing a console window won't kill it).
-
-If you already installed it and want to overwrite/update the task:
-
-```powershell
-clipal.exe service install --force
-```
-
-If your config dir is not `%USERPROFILE%\\.clipal\\`:
-
-```powershell
-clipal.exe service install --config-dir C:\\path\\to\\config
-```
-
-#### Option B: manual UI
-
-Task Scheduler → Create Task:
-
-- General: “Run with highest privileges” only if you need it
-- Triggers: At log on
-- Actions: Start a program
-  - Program/script: `C:\\Users\\<YOU>\\bin\\clipal.exe`
-  - Arguments: `--detach-console --config-dir C:\\Users\\<YOU>\\.clipal`
-
-Verify:
-
-```powershell
-# Default port is 3333. If you changed `port` in config.yaml, use that port here.
-Invoke-WebRequest http://127.0.0.1:3333/health | Select-Object -Expand Content
-```
-
-## 6. Run as a Windows Service (optional)
-
-If you need it to run without logging in, you can use NSSM (Non-Sucking Service Manager) to wrap `clipal.exe` as a service:
-
-- Application: `C:\\Users\\<YOU>\\bin\\clipal.exe`
-- Arguments: `--config-dir C:\\Users\\<YOU>\\.clipal`
-
-## 7. FAQ
-
-- Port in use: change `port` in `config.yaml` or run with `--port 3334`
-- Installed but health check fails: make sure you are checking the correct port (the one in your `config.yaml`)
-- Security: keep `listen_addr: 127.0.0.1`
-- Seeing `Warning: config file ... permissive permissions (666), consider chmod 600`:
-  - This is a Unix-style permission check; on Windows, `os.Stat().Mode().Perm()` does not represent NTFS ACLs and often shows `0666`, so it can be a false positive.
-  - Newer versions disable this check on Windows; on older versions you can ignore the warning.
-  - If you want to restrict access to the config dir, you can use `icacls` to allow only the current user (adjust the path as needed):
-    - `icacls "$env:USERPROFILE\\.clipal" /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F"`
-- Task Scheduler says “permission denied” / “config not found”:
-  - Make sure the task “User account” matches the owner of the config dir (usually `%USERPROFILE%\\.clipal\\`).
-  - Pass `--config-dir C:\\Users\\<YOU>\\.clipal` explicitly to avoid resolving a different profile directory.
-  - If you see `Access is denied.` during `clipal.exe service install`, try running PowerShell as Administrator (or uninstall the existing task first if it was created under a different account).
+For shared issues, continue with [Troubleshooting](troubleshooting.md).

@@ -1,97 +1,62 @@
-# Linux Guide (systemd / nohup)
+# Linux Guide
 
 English: [docs/en/linux.md](linux.md) | 中文: [docs/zh/linux.md](../zh/linux.md)
 
-## 1. Download
+This page only covers Linux-specific differences. For the shared setup flow, see [Getting Started](getting-started.md).
 
-From GitHub Releases:
+## Install The Binary
 
-- x86_64: `clipal-linux-amd64`
-- ARM64: `clipal-linux-arm64`
+Download from Releases:
 
-After downloading, renaming it to `clipal` is recommended.
+- `clipal-linux-amd64`
+- `clipal-linux-arm64`
 
-## 2. Install to `PATH`
+Example:
 
 ```bash
 chmod +x ./clipal-linux-amd64
 sudo mv ./clipal-linux-amd64 /usr/local/bin/clipal
-```
-
-Verify:
-
-```bash
 clipal --version
 ```
 
-## 3. Initialize config
+## Temporary Background Run
+
+For a quick short-lived background run:
 
 ```bash
-mkdir -p ~/.clipal
-cp examples/config.yaml ~/.clipal/config.yaml
-cp examples/claude-code.yaml ~/.clipal/claude-code.yaml
-cp examples/codex.yaml ~/.clipal/codex.yaml
-cp examples/gemini.yaml ~/.clipal/gemini.yaml
+nohup clipal >/dev/null 2>&1 &
 ```
 
-Edit `~/.clipal/*.yaml` and fill in `api_key` or `api_keys`.
+Useful for short-term use, but not the preferred long-running setup.
 
-## 4. Foreground run (first-time verification)
+## Long-Running Setup: systemd User Service
+
+The recommended approach is the built-in command flow:
 
 ```bash
-clipal --log-level debug
-curl -fsS http://127.0.0.1:3333/health
-```
-
-## 5. Background run
-
-### 5.1 Option A: `nohup` (simple; not recommended for long-term)
-
-```bash
-nohup clipal --log-level info >/dev/null 2>&1 &
-```
-
-Suggested `~/.clipal/config.yaml`:
-
-```yaml
-log_stdout: false
-log_retention_days: 7
-```
-
-### 5.2 Option B: systemd user service (recommended; no root)
-
-You can pick one of the following:
-
-- **Option B1 (recommended): built-in command**: `clipal service install` generates the unit and enables it via `systemctl --user`
-- **Option B2: manual unit**: for fully customized unit
-
-#### Option B1: built-in command (recommended)
-
-```bash
-clipal status
 clipal service install
 clipal service status
-clipal service status --raw
 clipal service restart
 clipal service stop
 clipal service uninstall
 ```
 
-If you already installed it and want to overwrite/update the unit:
+Useful variants:
 
 ```bash
 clipal service install --force
-```
-
-If your config dir is not `~/.clipal`:
-
-```bash
 clipal service install --config-dir /path/to/config
 ```
 
-#### Option B2: manual unit
+## Manual systemd Setup
 
-Create `~/.config/systemd/user/clipal.service`:
+If you want to manage the unit file yourself, create:
+
+```text
+~/.config/systemd/user/clipal.service
+```
+
+Minimal example:
 
 ```ini
 [Unit]
@@ -108,30 +73,30 @@ RestartSec=2
 WantedBy=default.target
 ```
 
-If your binary is in `$HOME/bin/clipal`, change `ExecStart` to:
-
-`ExecStart=%h/bin/clipal --config-dir %h/.clipal`
-
-Enable and start (after login):
+Enable and start it:
 
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable --now clipal.service
 ```
 
-Check:
+## Logging Advice
 
-```bash
-systemctl --user status clipal.service
-curl -fsS http://127.0.0.1:3333/health
+For long-running setups, this is a good default in `config.yaml`:
+
+```yaml
+log_stdout: false
+log_retention_days: 7
 ```
 
-Logs:
+Two common log sources:
 
-- Clipal files: `~/.clipal/logs/clipal-YYYY-MM-DD.log`
-- systemd journal: `journalctl --user -u clipal.service -e`
+- Clipal's own rotating logs
+- `journalctl --user -u clipal.service -e`
 
-## 6. FAQ
+## Linux-Specific Notes
 
-- Port in use: change `port` in `~/.clipal/config.yaml` or run with `--port 3334`
-- Security: keep `listen_addr: 127.0.0.1`
+- If the port is in use, change `port` or override with `--port`
+- If the binary lives under your home directory, update `ExecStart` accordingly
+
+For shared issues, continue with [Troubleshooting](troubleshooting.md).
