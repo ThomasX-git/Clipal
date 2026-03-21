@@ -38,6 +38,7 @@ Clipal 当前内置三组本地路由：
 ## 快速开始
 
 1. 从 [Releases](https://github.com/lansespirit/Clipal/releases) 下载对应平台的二进制。
+   当前稳定版：[`v0.6.2`](https://github.com/lansespirit/Clipal/releases/tag/v0.6.2)
 2. 放到 `PATH` 中并确认版本：
 
 ```bash
