@@ -32,3 +32,6 @@ debug.log
 
 # reference files
 .ref/
+
+# local worktrees
+.worktrees/
