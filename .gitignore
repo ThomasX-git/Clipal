@@ -35,3 +35,6 @@ debug.log
 
 # local worktrees
 .worktrees/
+
+# Superpowers
+/docs/superpowers/
