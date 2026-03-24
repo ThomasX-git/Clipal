@@ -405,12 +405,36 @@ function app() {
             return value.trim() ? value : emptyLabel;
         },
 
+        integrationSecondaryPreviewLabel(integration) {
+            return integration && integration.state === 'configured' && integration.backup_available
+                ? 'Latest backup'
+                : 'After apply';
+        },
+
+        integrationSecondaryPreviewContent(integration) {
+            if (integration && integration.state === 'configured' && integration.backup_available) {
+                return String((integration && integration.backup_content) || '');
+            }
+            return String((integration && integration.planned_content) || '');
+        },
+
+        integrationSecondaryPreviewEmptyLabel(integration) {
+            if (integration && integration.state === 'configured' && integration.backup_available) {
+                return integration.backup_target_existed
+                    ? 'Backup is empty.'
+                    : 'Original file did not exist before Clipal takeover.';
+            }
+            return 'No planned changes.';
+        },
+
         normalizeIntegration(item) {
             return {
                 ...item,
                 name: this.integrationProductName(item.product) || item.name,
                 current_content: String((item && item.current_content) || ''),
-                planned_content: String((item && item.planned_content) || '')
+                planned_content: String((item && item.planned_content) || ''),
+                backup_content: String((item && item.backup_content) || ''),
+                backup_target_existed: !!(item && item.backup_target_existed)
             };
         },
 

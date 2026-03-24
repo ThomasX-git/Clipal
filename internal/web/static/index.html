@@ -426,8 +426,9 @@
                                     <pre class="integration-preview-code" x-text="integrationPreviewValue(integration.current_content, 'File does not exist yet.')"></pre>
                                 </div>
                                 <div class="integration-preview-panel">
-                                    <div class="kv-label">After apply</div>
-                                    <pre class="integration-preview-code" x-text="integrationPreviewValue(integration.planned_content, 'No planned changes.')"></pre>
+                                    <div class="kv-label" x-text="integrationSecondaryPreviewLabel(integration)"></div>
+                                    <pre class="integration-preview-code"
+                                        x-text="integrationPreviewValue(integrationSecondaryPreviewContent(integration), integrationSecondaryPreviewEmptyLabel(integration))"></pre>
                                 </div>
                             </div>
                         </details>

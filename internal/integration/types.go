@@ -46,9 +46,11 @@ type Result struct {
 }
 
 type Preview struct {
-	Product        ProductID `json:"product"`
-	CurrentContent string    `json:"current_content"`
-	PlannedContent string    `json:"planned_content"`
+	Product             ProductID `json:"product"`
+	CurrentContent      string    `json:"current_content"`
+	PlannedContent      string    `json:"planned_content"`
+	BackupContent       string    `json:"backup_content"`
+	BackupTargetExisted bool      `json:"backup_target_existed"`
 }
 
 func SupportedProducts() []ProductID {

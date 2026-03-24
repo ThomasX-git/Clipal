@@ -285,7 +285,7 @@ func TestIntegrations_UIAndRouteAreRegistered(t *testing.T) {
 		"This only edits your user-level config file.",
 		"Restart the client or open a new session after applying changes.",
 		"Current file",
-		"After apply",
+		"integrationSecondaryPreviewLabel",
 		"integration-card-actions",
 		"integration-card-header",
 		"integration-card-heading",
@@ -318,9 +318,13 @@ func TestIntegrations_UIAndRouteAreRegistered(t *testing.T) {
 		`wire_api = "responses"`,
 		"current_content",
 		"planned_content",
+		"backup_content",
+		"backup_target_existed",
 		"Already using Clipal",
 		"No backup yet. Apply once before restore becomes available.",
 		"Restore is only available while Clipal is active.",
+		"Latest backup",
+		"Original file did not exist before Clipal takeover.",
 	} {
 		if !strings.Contains(js, want) {
 			t.Fatalf("app.js missing %q", want)

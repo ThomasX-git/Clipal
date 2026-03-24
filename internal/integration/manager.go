@@ -84,24 +84,36 @@ func (m Manager) Apply(product ProductID, cfg *config.Config) (Result, error) {
 }
 
 func (m Manager) Preview(product ProductID, cfg *config.Config) (Preview, error) {
+	backupContent, backupTargetExisted, err := m.latestBackupPreview(product)
+	if err != nil {
+		return Preview{}, err
+	}
+
+	var preview Preview
 	switch product {
 	case ProductClaudeCode:
-		return m.previewClaude(cfg)
+		preview, err = m.previewClaude(cfg)
 	case ProductCodexCLI:
-		return m.previewCodex(cfg)
+		preview, err = m.previewCodex(cfg)
 	case ProductOpenCode:
-		return m.previewOpenCode(cfg)
+		preview, err = m.previewOpenCode(cfg)
 	case ProductGeminiCLI:
-		return m.previewGemini(cfg)
+		preview, err = m.previewGemini(cfg)
 	case ProductContinue:
-		return m.previewContinue(cfg)
+		preview, err = m.previewContinue(cfg)
 	case ProductAider:
-		return m.previewAider(cfg)
+		preview, err = m.previewAider(cfg)
 	case ProductGoose:
-		return m.previewGoose(cfg)
+		preview, err = m.previewGoose(cfg)
 	default:
 		return Preview{}, fmt.Errorf("unknown product: %s", product)
 	}
+	if err != nil {
+		return Preview{}, err
+	}
+	preview.BackupContent = backupContent
+	preview.BackupTargetExisted = backupTargetExisted
+	return preview, nil
 }
 
 func (m Manager) Rollback(product ProductID, cfg *config.Config) (Result, error) {
@@ -133,6 +145,17 @@ func (m Manager) Rollback(product ProductID, cfg *config.Config) (Result, error)
 		Status:  status,
 		Message: "rollback completed",
 	}, nil
+}
+
+func (m Manager) latestBackupPreview(product ProductID) (string, bool, error) {
+	snap, err := m.loadLatestBackup(product)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("load latest backup preview: %w", err)
+	}
+	return string(snap.Original), snap.TargetExisted, nil
 }
 
 func (m Manager) resolveHomeDir() (string, error) {

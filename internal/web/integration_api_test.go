@@ -222,6 +222,66 @@ func TestHandleListIntegrations_UsesRuntimeGlobalConfigForPreview(t *testing.T) 
 	}
 }
 
+func TestHandleListIntegrations_ConfiguredShowsLatestBackup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	codexDir := filepath.Join(home, ".codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	target := filepath.Join(codexDir, "config.toml")
+	original := "model_provider = \"openai\"\n"
+	if err := os.WriteFile(target, []byte(original), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	api := NewAPI(t.TempDir(), "test", nil)
+
+	applyReq := httptest.NewRequest(http.MethodPost, "/api/integrations/codex/apply", nil)
+	applyW := httptest.NewRecorder()
+	api.HandleIntegrationAction(applyW, applyReq)
+	if applyW.Result().StatusCode != http.StatusOK {
+		t.Fatalf("apply status=%d body=%s", applyW.Result().StatusCode, applyW.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/integrations", nil)
+	w := httptest.NewRecorder()
+	api.HandleListIntegrations(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	var got []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode json: %v\nbody=%s", err, w.Body.String())
+	}
+
+	var codex map[string]any
+	for _, item := range got {
+		if item["product"] == "codex" {
+			codex = item
+			break
+		}
+	}
+	if codex == nil {
+		t.Fatalf("codex integration not found: %+v", got)
+	}
+
+	if codex["state"] != "configured" {
+		t.Fatalf("state=%v want configured", codex["state"])
+	}
+	backupContent, _ := codex["backup_content"].(string)
+	if !strings.Contains(backupContent, original) {
+		t.Fatalf("backup preview missing original config:\n%s", backupContent)
+	}
+	backupTargetExisted, _ := codex["backup_target_existed"].(bool)
+	if !backupTargetExisted {
+		t.Fatalf("backup_target_existed=%v want true", codex["backup_target_existed"])
+	}
+}
+
 func TestHandleIntegrationApply_Gemini(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

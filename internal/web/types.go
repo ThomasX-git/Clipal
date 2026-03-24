@@ -230,14 +230,16 @@ type ServiceStatusResponse struct {
 }
 
 type IntegrationResponse struct {
-	Product         string `json:"product"`
-	Name            string `json:"name"`
-	State           string `json:"state"`
-	TargetPath      string `json:"target_path"`
-	BackupAvailable bool   `json:"backup_available"`
-	Warning         string `json:"warning,omitempty"`
-	CurrentContent  string `json:"current_content,omitempty"`
-	PlannedContent  string `json:"planned_content,omitempty"`
+	Product             string `json:"product"`
+	Name                string `json:"name"`
+	State               string `json:"state"`
+	TargetPath          string `json:"target_path"`
+	BackupAvailable     bool   `json:"backup_available"`
+	Warning             string `json:"warning,omitempty"`
+	CurrentContent      string `json:"current_content,omitempty"`
+	PlannedContent      string `json:"planned_content,omitempty"`
+	BackupContent       string `json:"backup_content,omitempty"`
+	BackupTargetExisted bool   `json:"backup_target_existed"`
 }
 
 type IntegrationActionResponse struct {
@@ -314,13 +316,15 @@ func toClientConfigExport(cc config.ClientConfig) ClientConfigExport {
 
 func toIntegrationResponse(product integrationpkg.ProductID, status integrationpkg.Status, preview integrationpkg.Preview) IntegrationResponse {
 	return IntegrationResponse{
-		Product:         string(product),
-		Name:            integrationpkg.ProductName(product),
-		State:           string(status.State),
-		TargetPath:      status.TargetPath,
-		BackupAvailable: status.BackupAvailable,
-		Warning:         status.Warning,
-		CurrentContent:  preview.CurrentContent,
-		PlannedContent:  preview.PlannedContent,
+		Product:             string(product),
+		Name:                integrationpkg.ProductName(product),
+		State:               string(status.State),
+		TargetPath:          status.TargetPath,
+		BackupAvailable:     status.BackupAvailable,
+		Warning:             status.Warning,
+		CurrentContent:      preview.CurrentContent,
+		PlannedContent:      preview.PlannedContent,
+		BackupContent:       preview.BackupContent,
+		BackupTargetExisted: preview.BackupTargetExisted,
 	}
 }
