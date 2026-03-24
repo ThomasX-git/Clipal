@@ -1051,13 +1051,6 @@ func (cp *ClientProxy) getCurrentIndex() int {
 	return cp.currentIndex
 }
 
-// setCurrentIndex sets the current provider index
-func (cp *ClientProxy) setCurrentIndex(index int) {
-	cp.mu.Lock()
-	defer cp.mu.Unlock()
-	cp.currentIndex = index
-}
-
 // hopByHopHeaders is a set of hop-by-hop headers that should not be forwarded.
 var hopByHopHeaders = map[string]bool{
 	"Connection":          true,

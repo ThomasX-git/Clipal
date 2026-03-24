@@ -167,10 +167,10 @@ func TestValidate_CircuitBreakerDisabled_AllowsInvalidCBFields(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{
-		Global:     DefaultGlobalConfig(),
+		Global: DefaultGlobalConfig(),
 		Claude: ClientConfig{Mode: ClientModeAuto},
-		OpenAI:      ClientConfig{Mode: ClientModeAuto},
-		Gemini:     ClientConfig{Mode: ClientModeAuto},
+		OpenAI: ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
 	}
 
 	// Disable circuit breaker explicitly.
@@ -202,10 +202,10 @@ func TestValidate_CircuitBreakerEnabled_StillValidatesCBFields(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{
-		Global:     DefaultGlobalConfig(),
+		Global: DefaultGlobalConfig(),
 		Claude: ClientConfig{Mode: ClientModeAuto},
-		OpenAI:      ClientConfig{Mode: ClientModeAuto},
-		Gemini:     ClientConfig{Mode: ClientModeAuto},
+		OpenAI: ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
 	}
 
 	cfg.Global.CircuitBreaker.FailureThreshold = 1
@@ -220,10 +220,10 @@ func TestValidate_CircuitBreakerFailureThresholdNegative_IsRejected(t *testing.T
 	t.Parallel()
 
 	cfg := &Config{
-		Global:     DefaultGlobalConfig(),
+		Global: DefaultGlobalConfig(),
 		Claude: ClientConfig{Mode: ClientModeAuto},
-		OpenAI:      ClientConfig{Mode: ClientModeAuto},
-		Gemini:     ClientConfig{Mode: ClientModeAuto},
+		OpenAI: ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
 	}
 
 	cfg.Global.CircuitBreaker.FailureThreshold = -1
@@ -250,7 +250,7 @@ func TestValidate_ManualMode_RequiresEnabledPinnedProvider(t *testing.T) {
 			PinnedProvider: "p1",
 			Providers:      []Provider{provider},
 		},
-		OpenAI:  ClientConfig{Mode: ClientModeAuto},
+		OpenAI: ClientConfig{Mode: ClientModeAuto},
 		Gemini: ClientConfig{Mode: ClientModeAuto},
 	}
 
@@ -296,7 +296,7 @@ func TestValidate_ProviderAPIKeys_MultiKeySupported(t *testing.T) {
 			},
 		},
 		Claude: ClientConfig{Mode: ClientModeAuto},
-		Gemini:     ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
 	}
 
 	applyClientDefaults(&cfg.OpenAI)
@@ -360,7 +360,7 @@ func TestValidate_ProviderAPIKeys_RejectsMixedForms(t *testing.T) {
 			},
 		},
 		Claude: ClientConfig{Mode: ClientModeAuto},
-		Gemini:     ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
 	}
 
 	if err := cfg.Validate(); err == nil {
@@ -381,7 +381,7 @@ func TestValidate_RejectsDuplicateProviderNamesPerClient(t *testing.T) {
 			},
 		},
 		Claude: ClientConfig{Mode: ClientModeAuto},
-		Gemini:     ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
 	}
 
 	err := cfg.Validate()
@@ -558,10 +558,10 @@ func TestValidate_RoutingConfigRejectsInvalidValues(t *testing.T) {
 			t.Parallel()
 
 			cfg := &Config{
-				Global:     DefaultGlobalConfig(),
+				Global: DefaultGlobalConfig(),
 				Claude: ClientConfig{Mode: ClientModeAuto},
-				OpenAI:      ClientConfig{Mode: ClientModeAuto},
-				Gemini:     ClientConfig{Mode: ClientModeAuto},
+				OpenAI: ClientConfig{Mode: ClientModeAuto},
+				Gemini: ClientConfig{Mode: ClientModeAuto},
 			}
 			tt.mutate(cfg)
 

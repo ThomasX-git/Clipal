@@ -319,24 +319,6 @@ func (cp *ClientProxy) nextActiveKeyIndexLocked(providerIndex int, from int, now
 	return from
 }
 
-func (cp *ClientProxy) ensureActiveKeyIndexLocked(providerIndex int, countTokens bool, now time.Time) int {
-	if providerIndex < 0 || providerIndex >= len(cp.providerKeys) || len(cp.providerKeys[providerIndex]) == 0 {
-		return 0
-	}
-	cur := cp.keyIndicesForScopeLocked(routingScopeDefault)
-	if countTokens {
-		cur = cp.keyIndicesForScopeLocked(routingScopeClaudeCountTokens)
-	}
-	if cur == nil || providerIndex >= len(cur) {
-		return 0
-	}
-	if cur[providerIndex] < 0 || cur[providerIndex] >= len(cp.providerKeys[providerIndex]) {
-		cur[providerIndex] = 0
-	}
-	cur[providerIndex] = cp.nextActiveKeyIndexLocked(providerIndex, cur[providerIndex], now)
-	return cur[providerIndex]
-}
-
 func (cp *ClientProxy) keyIndicesForScopeLocked(scope routingScope) []int {
 	switch scope {
 	case routingScopeClaudeCountTokens:
@@ -398,14 +380,6 @@ func (cp *ClientProxy) getActiveKeyCountAndStartIndexForScope(providerIndex int,
 	return active, cur[providerIndex]
 }
 
-func (cp *ClientProxy) setCurrentKeyIndex(providerIndex int, keyIndex int) {
-	cp.setCurrentKeyIndexForScope(providerIndex, keyIndex, routingScopeDefault)
-}
-
-func (cp *ClientProxy) setCountTokensKeyIndex(providerIndex int, keyIndex int) {
-	cp.setCurrentKeyIndexForScope(providerIndex, keyIndex, routingScopeClaudeCountTokens)
-}
-
 func (cp *ClientProxy) activeKeyCount(providerIndex int) int {
 	cp.mu.RLock()
 	defer cp.mu.RUnlock()
@@ -416,20 +390,6 @@ func (cp *ClientProxy) nextActiveKeyIndex(providerIndex int, from int) int {
 	cp.mu.RLock()
 	defer cp.mu.RUnlock()
 	return cp.nextActiveKeyIndexLocked(providerIndex, from, time.Now())
-}
-
-func (cp *ClientProxy) preferredKeyIndex(providerIndex int, countTokens bool) int {
-	if countTokens {
-		return cp.preferredKeyIndexForScope(providerIndex, routingScopeClaudeCountTokens)
-	}
-	return cp.preferredKeyIndexForScope(providerIndex, routingScopeDefault)
-}
-
-func (cp *ClientProxy) getActiveKeyCountAndStartIndex(providerIndex int, countTokens bool) (active int, startIndex int) {
-	if countTokens {
-		return cp.getActiveKeyCountAndStartIndexForScope(providerIndex, routingScopeClaudeCountTokens)
-	}
-	return cp.getActiveKeyCountAndStartIndexForScope(providerIndex, routingScopeDefault)
 }
 
 func (cp *ClientProxy) deactivateKeyFor(providerIndex int, keyIndex int, reason string, status int, msg string, d time.Duration) {
@@ -555,12 +515,6 @@ func (cp *ClientProxy) activeProviderCount() int {
 	return count
 }
 
-// getActiveCountAndStartIndex atomically returns the active provider count and
-// the start index for iteration, avoiding TOCTOU race conditions.
-func (cp *ClientProxy) getActiveCountAndStartIndex() (active int, startIndex int) {
-	return cp.getActiveCountAndStartIndexForScope(routingScopeDefault)
-}
-
 func (cp *ClientProxy) getActiveCountAndStartIndexForScope(scope routingScope) (active int, startIndex int) {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
@@ -578,12 +532,6 @@ func (cp *ClientProxy) getActiveCountAndStartIndexForScope(scope routingScope) (
 
 	startIndex = cp.ensureActiveScopeIndexLocked(scope, now)
 	return active, startIndex
-}
-
-// getActiveCountAndCountTokensStartIndex atomically returns the active provider count and
-// the start index for count_tokens iteration.
-func (cp *ClientProxy) getActiveCountAndCountTokensStartIndex() (active int, startIndex int) {
-	return cp.getActiveCountAndStartIndexForScope(routingScopeClaudeCountTokens)
 }
 
 // handleAllUnavailable writes a Retry-After response if all providers are temporarily unavailable.
@@ -604,10 +552,6 @@ func (cp *ClientProxy) handleAllUnavailable(w http.ResponseWriter) bool {
 		http.Error(w, "All providers are temporarily unavailable; retry later", http.StatusServiceUnavailable)
 	}
 	return true
-}
-
-func (cp *ClientProxy) setCountTokensIndex(index int) {
-	cp.setCurrentIndexForScope(index, routingScopeClaudeCountTokens)
 }
 
 func (cp *ClientProxy) countTokensSingleShotTarget() (int, config.Provider, int, bool) {

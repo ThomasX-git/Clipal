@@ -69,14 +69,6 @@ const (
 	routingScopeGeminiStream      routingScope = "gemini_stream_generate_content"
 )
 
-func detectClipalClientType(path string) (ClientType, bool) {
-	requestCtx, ok := detectClipalRequestContext(path)
-	if !ok {
-		return "", false
-	}
-	return requestCtx.ClientType, true
-}
-
 func detectClipalRequestContext(path string) (RequestContext, bool) {
 	path = normalizeUpstreamPath(path)
 
@@ -204,10 +196,6 @@ func capabilityOrDefault(capability RequestCapability, fallback RequestCapabilit
 	return fallback
 }
 
-func isClaudeCompatiblePath(path string) bool {
-	return detectClaudeCapability(path) != ""
-}
-
 func detectClaudeCapability(path string) RequestCapability {
 	switch {
 	case isClaudeCountTokensPath(path):
@@ -217,10 +205,6 @@ func detectClaudeCapability(path string) RequestCapability {
 	default:
 		return ""
 	}
-}
-
-func isOpenAICompatiblePath(path string) bool {
-	return detectOpenAICapability(path) != ""
 }
 
 func detectOpenAICapability(path string) RequestCapability {
@@ -294,35 +278,6 @@ func detectGeminiCapability(path string) RequestCapability {
 	default:
 		return ""
 	}
-}
-
-func isGeminiRPCPath(path string, prefix string) bool {
-	if !strings.HasPrefix(path, prefix) {
-		return false
-	}
-
-	switch {
-	case strings.HasSuffix(path, ":generateContent"), strings.HasSuffix(path, ":generateContent/"):
-		return true
-	case strings.HasSuffix(path, ":streamGenerateContent"), strings.HasSuffix(path, ":streamGenerateContent/"):
-		return true
-	case strings.HasSuffix(path, ":countTokens"), strings.HasSuffix(path, ":countTokens/"):
-		return true
-	case strings.HasSuffix(path, ":embedContent"), strings.HasSuffix(path, ":embedContent/"):
-		return true
-	case strings.HasSuffix(path, ":batchEmbedContents"), strings.HasSuffix(path, ":batchEmbedContents/"):
-		return true
-	default:
-		return false
-	}
-}
-
-func isGeminiGenerateContentPath(path string) bool {
-	return isGeminiMethodPath(path, ":generateContent")
-}
-
-func isGeminiStreamGenerateContentPath(path string) bool {
-	return isGeminiMethodPath(path, ":streamGenerateContent")
 }
 
 func isGeminiMethodPath(path string, method string) bool {
