@@ -278,6 +278,45 @@ body {
     letter-spacing: 0.02em;
 }
 
+.badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    line-height: 1;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.badge-xs {
+    height: 20px;
+    padding: 0 7px;
+    font-size: 0.6875rem;
+}
+
+.badge-sm {
+    height: 22px;
+    padding: 0 8px;
+    font-size: var(--text-xs);
+}
+
+.badge-outline {
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.badge-warning {
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--warning);
+    border: 1px solid transparent;
+}
+
+.badge-mono {
+    font-family: var(--font-mono);
+    letter-spacing: 0.04em;
+}
+
 .version-pill {
     font-family: var(--font-mono);
     font-weight: var(--font-medium);
@@ -992,28 +1031,11 @@ body {
 }
 
 .pin-badge {
-    height: 22px;
-    display: inline-flex;
-    align-items: center;
-    padding: 0 8px;
-    border-radius: 999px;
-    background: rgba(245, 158, 11, 0.12);
-    color: var(--warning);
-    font-size: var(--text-xs);
     font-weight: var(--font-bold);
-    border: 1px solid transparent;
-    user-select: none;
 }
 
 .priority-badge {
-    font-size: 0.75rem;
     font-weight: var(--font-bold);
-    color: var(--text-secondary);
-    background: var(--bg-surface);
-    padding: 3px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    letter-spacing: 0.05em;
 }
 
 .provider-name {

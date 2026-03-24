@@ -113,7 +113,7 @@
                     <div class="client-mode-row">
                         <div class="client-mode-left">
                             <span class="client-mode-label">Mode</span>
-                            <span class="mode-pill pill pill-sm" :class="clientConfig.mode === 'auto' ? 'mode-auto' : 'mode-manual'"
+                            <span class="mode-pill pill pill-xs" :class="clientConfig.mode === 'auto' ? 'mode-auto' : 'mode-manual'"
                                 x-text="clientConfig.mode === 'auto' ? 'Auto' : 'Manual'"></span>
                             <span class="tooltip" aria-label="Mode help">
                                 <button type="button" class="info-btn" aria-label="Mode help">i</button>
@@ -156,10 +156,10 @@
                         <div class="provider-header">
                             <div class="provider-info">
                                 <div class="provider-name-row">
-                                    <span class="priority-badge" x-text="'#' + provider.priority"></span>
+                                    <span class="priority-badge badge badge-xs badge-outline badge-mono" x-text="'#' + provider.priority"></span>
                                     <h3 class="provider-name" x-text="provider.name"></h3>
                                     <template x-if="clientConfig.mode === 'manual' && provider.name === clientConfig.pinned_provider">
-                                        <span class="pin-badge" title="Pinned provider">Pinned</span>
+                                        <span class="pin-badge badge badge-xs badge-warning" title="Pinned provider">Pinned</span>
                                     </template>
                                 </div>
                                 <span
@@ -628,7 +628,7 @@
                             <div>
                                 <h3 class="provider-name" x-text="clientLabel(name)"></h3>
                                 <div class="status-client-subtitle">
-                                    Current: <span class="mono-pill pill pill-sm" x-text="client.current_provider || 'None'"></span>
+                                    Current: <span class="mono-pill pill pill-xs" x-text="client.current_provider || 'None'"></span>
                                 </div>
                                 <template x-if="scopeProviderEntries(client).length > 0">
                                     <div class="form-hint" style="margin-top: 8px;">
@@ -644,10 +644,10 @@
                                     </div>
                                 </template>
                                 <div class="status-client-subtitle" style="margin-top: 6px;">
-                                    Mode: <span class="mono-pill pill pill-sm" x-text="client.mode || 'auto'"></span>
+                                    Mode: <span class="mono-pill pill pill-xs" x-text="client.mode || 'auto'"></span>
                                     <template x-if="(client.mode || '') === 'manual'">
                                         <span style="margin-left: 10px;">
-                                            Pinned: <span class="mono-pill pill pill-sm"
+                                            Pinned: <span class="mono-pill pill pill-xs"
                                                 x-text="client.pinned_provider || 'None'"></span>
                                         </span>
                                     </template>
@@ -727,8 +727,8 @@
                             placeholder="sk-xxx&#10;sk-yyy"></textarea>
                         <div class="form-meta">
                             <span class="form-meta-label">Saved as</span>
-                            <span class="mono-pill pill pill-sm">1 line -> api_key</span>
-                            <span class="mono-pill pill pill-sm">2+ lines -> api_keys</span>
+                            <span class="mono-pill pill pill-xs">1 line -> api_key</span>
+                            <span class="mono-pill pill pill-xs">2+ lines -> api_keys</span>
                         </div>
                         <div class="form-hint" x-show="showEditProviderModal && editingProviderKeyCount > 0"
                             x-text="'Leave empty to keep the current ' + editingProviderKeyCount + ' configured key' + (editingProviderKeyCount === 1 ? '' : 's') + '.'"></div>

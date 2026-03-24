@@ -161,6 +161,8 @@ func TestServeStatic_ContentTypeAndNotFound(t *testing.T) {
 		".pill-sm",
 		".pill-status-compact",
 		".pill {",
+		".badge {",
+		".badge-xs",
 	} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("styles.css missing %q", want)
@@ -176,6 +178,8 @@ func TestServeStatic_ContentTypeAndNotFound(t *testing.T) {
 	for _, want := range []string{
 		`class="version-pill pill pill-xs"`,
 		`class="metric-pill pill pill-status-compact integration-card-status"`,
+		`class="priority-badge badge badge-xs badge-outline badge-mono"`,
+		`class="pin-badge badge badge-xs badge-warning"`,
 	} {
 		if !strings.Contains(index, want) {
 			t.Fatalf("index missing %q", want)
