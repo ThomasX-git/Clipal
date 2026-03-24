@@ -353,6 +353,30 @@ function app() {
             return 'Restore';
         },
 
+        integrationActionIsBusy(integration, action) {
+            if (!integration || this.integrationBusyProduct !== integration.product) {
+                return false;
+            }
+            return action === 'apply'
+                ? integration.state !== 'configured'
+                : integration.state === 'configured';
+        },
+
+        integrationActionDisabledReason(integration, action) {
+            if (!integration || this.integrationActionIsBusy(integration, action)) {
+                return '';
+            }
+            if (action === 'apply') {
+                return integration.state === 'configured' ? 'Already using Clipal' : '';
+            }
+            if (!integration.backup_available) {
+                return 'No backup yet. Apply once before restore becomes available.';
+            }
+            return integration.state !== 'configured'
+                ? 'Restore is only available while Clipal is active.'
+                : '';
+        },
+
 
         integrationProductNote(product) {
             switch (String(product || '').trim()) {

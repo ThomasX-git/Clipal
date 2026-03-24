@@ -379,39 +379,55 @@
 
                 <template x-for="integration in integrations" :key="integration.product">
                     <div class="card integration-card">
-                        <div class="provider-header" style="margin-bottom: 8px; padding-bottom: 0; border-bottom: none; display: flex; align-items: center; justify-content: space-between;">
-                            <div style="display: flex; align-items: center; gap: 14px;">
-                                <h3 class="provider-name" x-text="integration.name"></h3>
-                                <span class="metric-pill" :class="integrationStateClass(integration.state)"
-                                    x-text="integrationStateLabel(integration.state)"></span>
-                            </div>
-                            <div class="segmented-group" style="padding: 3px; gap: 1px;">
-                                <button type="button" class="segment-btn" style="padding: 7px 18px; font-size: 13px; border-radius: 8px;"
-                                    :class="integration.state === 'configured' ? 'active' : ''"
-                                    :disabled="integrationBusyProduct === integration.product || integration.state === 'configured'"
-                                    @click="runIntegrationAction(integration.product, 'apply')"
-                                    x-text="integrationBusyProduct === integration.product && integration.state !== 'configured' ? 'Working...' : integrationApplyLabel()">
-                                </button>
-                                <button type="button" class="segment-btn" style="padding: 7px 18px; font-size: 13px; border-radius: 8px;"
-                                    :class="integration.state !== 'configured' ? 'active' : ''"
-                                    :disabled="integrationBusyProduct === integration.product || integration.state !== 'configured' || !integration.backup_available"
-                                    @click="runIntegrationAction(integration.product, 'rollback')"
-                                    x-text="integrationBusyProduct === integration.product && integration.state === 'configured' ? 'Working...' : integrationRollbackLabel()">
-                                </button>
-                            </div>
+                        <div class="integration-card-header">
+                            <h3 class="provider-name integration-card-heading" x-text="integration.name"></h3>
+                            <span class="metric-pill integration-card-status" :class="integrationStateClass(integration.state)"
+                                x-text="integrationStateLabel(integration.state)"></span>
                         </div>
 
-                        <details class="integration-preview-details" style="margin-top: 4px;">
-                            <summary class="form-hint" style="cursor: pointer; user-select: none; display: inline-block;">View Configuration Details & Preview (<span x-text="integration.backup_available ? 'Backup Available' : 'No backup yet'"></span>)</summary>
+                        <div class="integration-card-actions integration-card-actions-right">
+                            <span class="integration-action-shell"
+                                :class="integrationActionDisabledReason(integration, 'apply') ? 'tooltip integration-action-tooltip is-disabled' : ''"
+                                :tabindex="integrationActionDisabledReason(integration, 'apply') ? 0 : null"
+                                :aria-label="integrationActionDisabledReason(integration, 'apply') || null">
+                                <button type="button" class="integration-action-btn integration-action-primary"
+                                    :class="integrationActionIsBusy(integration, 'apply') ? 'integration-action-btn-busy' : ''"
+                                    :disabled="integrationBusyProduct === integration.product || integration.state === 'configured'"
+                                    @click="runIntegrationAction(integration.product, 'apply')"
+                                    x-text="integrationActionIsBusy(integration, 'apply') ? 'Working...' : integrationApplyLabel()">
+                                </button>
+                                <span x-show="integrationActionDisabledReason(integration, 'apply')" class="tooltip-content"
+                                    x-text="integrationActionDisabledReason(integration, 'apply')"></span>
+                            </span>
+                            <span class="integration-action-shell"
+                                :class="integrationActionDisabledReason(integration, 'rollback') ? 'tooltip integration-action-tooltip is-disabled' : ''"
+                                :tabindex="integrationActionDisabledReason(integration, 'rollback') ? 0 : null"
+                                :aria-label="integrationActionDisabledReason(integration, 'rollback') || null">
+                                <button type="button" class="integration-action-btn integration-action-secondary"
+                                    :class="integrationActionIsBusy(integration, 'rollback') ? 'integration-action-btn-busy' : ''"
+                                    :disabled="integrationBusyProduct === integration.product || integration.state !== 'configured' || !integration.backup_available"
+                                    @click="runIntegrationAction(integration.product, 'rollback')"
+                                    x-text="integrationActionIsBusy(integration, 'rollback') ? 'Working...' : integrationRollbackLabel()">
+                                </button>
+                                <span x-show="integrationActionDisabledReason(integration, 'rollback')" class="tooltip-content"
+                                    x-text="integrationActionDisabledReason(integration, 'rollback')"></span>
+                            </span>
+                        </div>
+
+                        <details class="integration-preview-details">
+                            <summary class="form-hint integration-card-summary integration-card-summary-row">
+                                <span class="integration-card-summary-label">View Configuration Details & Preview</span>
+                                <span class="integration-card-summary-meta" x-text="integration.backup_available ? 'Backup Available' : 'No backup yet'"></span>
+                            </summary>
 
                             <div class="integration-preview-grid" style="margin-top: 12px;">
                                 <div class="integration-preview-panel">
                                     <div class="kv-label">Current file</div>
-                                    <pre class="integration-preview-code" x-text="integrationPreviewValue(integration.current_content, 'File does not exist yet.')" style="min-height: 80px;"></pre>
+                                    <pre class="integration-preview-code" x-text="integrationPreviewValue(integration.current_content, 'File does not exist yet.')"></pre>
                                 </div>
                                 <div class="integration-preview-panel">
                                     <div class="kv-label">After apply</div>
-                                    <pre class="integration-preview-code" x-text="integrationPreviewValue(integration.planned_content, 'No planned changes.')" style="min-height: 80px;"></pre>
+                                    <pre class="integration-preview-code" x-text="integrationPreviewValue(integration.planned_content, 'No planned changes.')"></pre>
                                 </div>
                             </div>
                         </details>

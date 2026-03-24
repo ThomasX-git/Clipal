@@ -286,6 +286,15 @@ func TestIntegrations_UIAndRouteAreRegistered(t *testing.T) {
 		"Restart the client or open a new session after applying changes.",
 		"Current file",
 		"After apply",
+		"integration-card-actions",
+		"integration-card-header",
+		"integration-card-heading",
+		"integration-card-actions-right",
+		"integration-action-primary",
+		"integration-card-summary",
+		"integration-card-summary-row",
+		"integration-action-shell",
+		"integration-action-tooltip",
 	} {
 		if !strings.Contains(index, want) {
 			t.Fatalf("index missing %q: %s", want, index)
@@ -309,6 +318,9 @@ func TestIntegrations_UIAndRouteAreRegistered(t *testing.T) {
 		`wire_api = "responses"`,
 		"current_content",
 		"planned_content",
+		"Already using Clipal",
+		"No backup yet. Apply once before restore becomes available.",
+		"Restore is only available while Clipal is active.",
 	} {
 		if !strings.Contains(js, want) {
 			t.Fatalf("app.js missing %q", want)
