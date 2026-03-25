@@ -103,7 +103,7 @@ Dive deeper into what Clipal can do:
 - Your upstream API keys are stored only on your machine and transparently injected into requests.
 
 <div align="center">
-  <img src="assets/Clipal-luffy2.jpeg" alt="Clipal" width="100%">
+  <img src="assets/Clipal-luffy3.jpeg" alt="Clipal" width="100%">
 </div>
 
 ## 📄 License
