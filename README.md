@@ -1,55 +1,65 @@
 # Clipal
 
-![Clipal](assets/clipal-hero.jpg)
+<div align="center">
+  <img src="assets/clipal-Hancock.jpeg" alt="Clipal" width="100%">
+  <p><b>Your Ultimate Local LLM API Gateway & Manager</b></p>
+  <p>
+    <a href="README.md">English</a> | <a href="README.zh-CN.md">中文</a>
+  </p>
+</div>
 
-English: [README.md](README.md) | 中文: [README.zh-CN.md](README.zh-CN.md)
+---
 
-Clipal is a local LLM API reverse proxy and management tool.
+**Clipal** is the local LLM API proxy built for developer productivity. If you use AI coding tools like Claude Code, Continue, Aider, or Cherry Studio, Clipal acts as your intelligent traffic controller. It consolidates multiple model providers, handles automatic failover, manages API keys, and offers a beautiful Web UI—so you can focus on coding, not configuring.
 
-It consolidates multiple upstream providers behind local endpoints, with automatic failover, hot reload, a built-in Web UI, background service management, and multi-key support. 
+## ✨ Why Clipal? (Superpowers)
 
-It works well not only for Claude Code, Codex CLI, and Gemini CLI, but also for local clients that support a custom Base URL, such as Cherry Studio, Kelivo, Chatbox, and ChatWise.
+### 🚀 **One-Click CLI Takeover**
+No more hunting for hidden config files. With a single click in the Web UI, Clipal can automatically take over the configurations for **Claude Code, Codex CLI, OpenCode, Gemini CLI, Continue, Aider**, and **Goose**. 
+- It configures the local base URL for you.
+- It backs up your original settings.
+- It provides a safe rollback whenever you want.
 
-## What You Can Do With It
+### 🛡️ **Bulletproof Failover & Multi-Key Rotation**
+Tired of hitting rate limits or empty balances mid-generation?
+- **Multi-Key Pool**: Configure multiple `.api_keys` for a single provider. Clipal rotates them automatically and retries locally before giving up.
+- **Priority Failover**: Fall back to secondary models or providers instantly with out-of-the-box circuit breaking and quota management.
 
-- Configure multiple upstream providers per client group with priority-based failover
-- Keep separate configs for different client types or protocol styles
-- Add, edit, pin, enable, disable, and inspect providers in the Web UI
-- One-click take over supported CLI user configs from the Web UI, with backup and rollback
-- Configure multiple API keys per provider and retry within the same provider before moving to the next one
-- Manage local status, background services, and updates with `clipal status`, `clipal service`, and `clipal update`
-- Run as a single cross-platform binary on macOS, Linux, and Windows
-
-## Web UI
+### 🎛️ **Beautiful Local Web UI**
+Manage your AI workflows visually. Add, edit, enable, or disable providers, pin a specific model, and manage global settings with a modern dashboard. All changes are hot-reloaded—no restarts required.
 
 ![Clipal Web UI](assets/webUI.png)
 
-## Which Clients It Fits
+### ⚡ **Frictionless Background Service**
+Clipal runs as a single, cross-platform binary on macOS, Linux, and Windows. 
+Type `clipal service install` and `clipal service start` to keep it running silently in the background forever. Use `clipal status` or `clipal restart` for quick management.
 
-Clipal now standardizes client ingress on a single local route:
+---
 
-| Local endpoint | Typical use |
-|----------------|-------------|
-| `http://127.0.0.1:3333/clipal` | Preferred unified ingress for Claude-, OpenAI-, and Gemini-style requests |
-| `http://127.0.0.1:3333/claudecode` | Legacy Claude-compatible alias |
-| `http://127.0.0.1:3333/codex` | Legacy OpenAI-compatible alias |
-| `http://127.0.0.1:3333/gemini` | Legacy Gemini-compatible alias |
+## 🔌 Supported Clients
 
-For new setups, point clients at `/clipal` first. The older aliases remain available for compatibility and phased migration. Full compatibility still depends on the client's request format and the upstream provider's compatibility layer. See [docs/en/client-setup.md](docs/en/client-setup.md).
+Clipal standardizes client ingress entirely on a single local route: `http://127.0.0.1:3333/clipal`.
+It natively supports the request flavors of:
+- **Anthropic / Claude**
+- **OpenAI / Codex**
+- **Google Gemini**
 
-## Quick Start
+**Popular Supported Tools:**
+- **AI Coding Assistants:** Claude Code, Codex CLI, OpenCode, Gemini CLI, Continue, Aider, Goose
+- **Desktop Chat Clients:** Cherry Studio, Kelivo, Chatbox, ChatWise (via OpenAI compatibility)
 
-1. Download the right binary from [Releases](https://github.com/lansespirit/Clipal/releases).
-   Current stable release: [`v0.11.2`](https://github.com/lansespirit/Clipal/releases/tag/v0.11.2)
-2. Put it on your `PATH` and verify the version:
+---
 
+## ⚡ Quick Start
+
+### 1. Install Clipal
+Download the standalone binary for your OS from [Releases](https://github.com/lansespirit/Clipal/releases) (Current stable release: [`v0.11.2`](https://github.com/lansespirit/Clipal/releases/tag/v0.11.2)) and put it on your `PATH`.
 ```bash
 chmod +x clipal*
 ./clipal* --version
 ```
 
-3. Initialize config files:
-
+### 2. Initialize Configurations
 ```bash
 mkdir -p ~/.clipal
 cp examples/config.yaml ~/.clipal/config.yaml
@@ -57,89 +67,44 @@ cp examples/claude.yaml ~/.clipal/claude.yaml
 cp examples/openai.yaml ~/.clipal/openai.yaml
 cp examples/gemini.yaml ~/.clipal/gemini.yaml
 ```
+*Edit the generated `~/.clipal/*.yaml` files to add your API keys.*
 
-4. Edit `~/.clipal/*.yaml` and fill in your `api_key` or `api_keys`.
-5. Start Clipal:
-
+### 3. Run & Manage
+Start Clipal in the foreground:
 ```bash
 clipal
 ```
-
-6. Verify health and open the management UI:
-
+Or install it as a background service:
 ```bash
-curl -fsS http://127.0.0.1:3333/health
-clipal status
-```
-
-Then open `http://127.0.0.1:3333/` in your browser.
-
-## Example Config Files
-
-- [examples/config.yaml](examples/config.yaml)
-- [examples/claude.yaml](examples/claude.yaml)
-- [examples/openai.yaml](examples/openai.yaml)
-- [examples/gemini.yaml](examples/gemini.yaml)
-
-## Common Commands
-
-```bash
-# Run in foreground
-clipal
-
-# Inspect status
-clipal status
-clipal status --json
-
-# Manage background service
 clipal service install
-clipal service status
-clipal service restart
-clipal restart   # shortcut for clipal service restart
-
-# Check for updates or update in place
-clipal update --check
-clipal update
+clipal service start
 ```
 
-## Documentation
+### 4. Open the Web UI
+Visit `http://127.0.0.1:3333/` in your browser to manage providers and apply **CLI Takeover** for your favorite tools.
 
-- [Getting Started](docs/en/getting-started.md)
-- [Client Setup](docs/en/client-setup.md)
-- [Config Reference](docs/en/config-reference.md)
-- [Web UI Guide](docs/en/web-ui.md)
-- [Routing and Failover](docs/en/routing-and-failover.md)
-- [Services, Status, and Updates](docs/en/services.md)
-- [Troubleshooting](docs/en/troubleshooting.md)
-- [macOS](docs/en/macos.md) / [Linux](docs/en/linux.md) / [Windows](docs/en/windows.md)
-- [Docs Home](docs/en/README.md)
-- [Release Notes](release-notes/)
+---
 
-## Config Directory
+## 📖 Complete Documentation
 
-Default config directory:
+Dive deeper into what Clipal can do:
+- 🚀 [Getting Started](docs/en/getting-started.md)
+- 🔌 [Client Setup Guide](docs/en/client-setup.md)
+- ⚙️ [Config Reference](docs/en/config-reference.md)
+- 🖥️ [Web UI Guide](docs/en/web-ui.md)
+- 🔀 [Routing & Failover Magic](docs/en/routing-and-failover.md)
+- 🛠️ [Services, Status, and Updates](docs/en/services.md)
+- 📚 [Docs Home](docs/en/README.md) & [Release Notes](release-notes/)
 
-- macOS / Linux: `~/.clipal/`
-- Windows: `%USERPROFILE%\\.clipal\\`
+## 🔒 Security & Privacy
 
-Default files:
+- Clipal is fully local. The proxy listens on `127.0.0.1:3333` by default.
+- The Web UI is strictly locked to localhost—even if the proxy listens externally, the management UI rejects non-loopback requests.
+- Your upstream API keys are stored only on your machine and transparently injected into requests.
 
-```text
-~/.clipal/
-├── config.yaml
-├── claude.yaml
-├── openai.yaml
-└── gemini.yaml
-```
+<div align="center">
+  <img src="assets/clipal-luffy3.jpeg" alt="Clipal" width="100%">
+</div>
 
-Field details, examples, and behavior notes live in [docs/en/config-reference.md](docs/en/config-reference.md).
-
-## Security Notes
-
-- The proxy listens on `127.0.0.1:3333` by default
-- The Web UI is localhost-only, even if the proxy itself listens on `0.0.0.0` or `::`
-- Clipal overrides upstream auth headers from local provider config, so placeholder client-side API keys are usually fine
-
-## License
-
+## 📄 License
 MIT

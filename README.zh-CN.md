@@ -1,55 +1,65 @@
 # Clipal
 
-![Clipal](assets/clipal-hero.jpg)
+<div align="center">
+  <img src="assets/clipal-Hancock5.jpeg" alt="Clipal" width="100%">
+  <p><b>你的终极本地 LLM API 网关与管理器</b></p>
+  <p>
+    <a href="README.md">English</a> | <a href="README.zh-CN.md">中文</a>
+  </p>
+</div>
 
-English: [README.md](README.md) | 中文: [README.zh-CN.md](README.zh-CN.md)
+---
 
-Clipal 是一个本地 LLM API 反向代理与管理工具。
+**Clipal** 是一款专为开发者生产力打造的本地 LLM API 反向代理与管理工具。如果你正在使用诸如 Claude Code、Continue、Aider 或 Cherry Studio 等 AI 工具，Clipal 将成为你的智能流量大管家。它将多个上游大模型服务统一收口，支持自动故障切换、API Key 轮询，并提供了一个美观的 Web UI——让你专注于写代码，而不是折腾配置文件。
 
-它把多个上游 provider 统一收口到本机地址，支持自动切换、热重载、Web UI、后台服务和多 Key 管理。
+## ✨ 为什么选择 Clipal？（核心优势）
 
-除了 Claude Code、Codex CLI、Gemini CLI，也适合接入支持自定义 Base URL 的本地客户端，例如 Cherry Studio、Kelivo、Chatbox、ChatWise 等。
+### 🚀 **一键 CLI 接管 (CLI Takeover)**
+告别手动寻找、修改隐藏配置文件的烦恼。在 Web UI 中只需一键，Clipal 就能自动接管 **Claude Code、Codex CLI、OpenCode、Gemini CLI、Continue、Aider** 以及 **Goose** 的配置。
+- 自动帮你配置本地 Base URL。
+- 接管前自动备份原始配置。
+- 随时支持一键回滚。
 
-## 你可以用它做什么
+### 🛡️ **坚如磐石的故障切换与多 Key 轮询**
+遇到并发限制、速率限制或者余额耗尽导致生成中断？
+- **多 Key 轮询**：为单个 provider 配置多个 API Key，Clipal 会在同 provider 内自动重试并轮换 Key，直至成功。
+- **优先级自动容灾**：当主模型/服务商不可用时，基于预设优先级秒级无缝切换到备用模型，自带断路器和并发阻断机制。
 
-- 给同一类客户端配置多个上游 provider，并按优先级自动切换
-- 为不同客户端或协议分组维护独立配置
-- 在 Web UI 中增删 provider、切换模式、查看状态、管理后台服务
-- 在 Web UI 中一键接管已支持 CLI 的用户级配置，并支持备份与回滚
-- 在一个 provider 下配置多个 API Key，先在同 provider 内切换 key，再决定是否切 provider
-- 通过 `clipal status`、`clipal service`、`clipal update` 管理本地运行状态
-- 以单文件二进制运行在 macOS、Linux、Windows 上
-
-## Web UI
+### 🎛️ **美观且强大的本地 Web UI**
+可视化管理你的 AI 工作流。在这里增删、停用 provider，或者在“手动模式”下置顶特定模型，亦或调整全局运行参数。所有更改**热重载**生效，无需重启服务。
 
 ![Clipal Web UI](assets/webUI.png)
 
-## 适合哪些客户端
+### ⚡ **无感知的后台守护服务**
+Clipal 编译为单文件二进制，跨平台支持 macOS、Linux 和 Windows。
+只需敲入 `clipal service install` 和 `clipal service start`，它就会静默在后台永远为你跑着。想要查看状态或重启？用 `clipal status` 和 `clipal restart` 瞬间搞定。
 
-Clipal 现在将客户端入口统一规范到单一路由：
+---
 
-| 本地入口 | 典型用途 |
-|----------|----------|
-| `http://127.0.0.1:3333/clipal` | 首选统一入口，接收 Claude / OpenAI / Gemini 风格请求 |
-| `http://127.0.0.1:3333/claudecode` | 兼容保留的 Claude 别名入口 |
-| `http://127.0.0.1:3333/codex` | 兼容保留的 OpenAI 别名入口 |
-| `http://127.0.0.1:3333/gemini` | 兼容保留的 Gemini 别名入口 |
+## 🔌 广泛的客户端支持
 
-新接入建议优先使用 `/clipal`。旧别名仍然保留，用于兼容现有配置和渐进迁移。是否完全可用，取决于客户端请求格式和上游 provider 的兼容程度。常见接入方式见 [docs/zh/client-setup.md](docs/zh/client-setup.md)。
+Clipal 现已将所有客户端入口统一规范到单一路由：`http://127.0.0.1:3333/clipal`。
+它原生支持智能识别和兼容以下请求风格：
+- **Anthropic / Claude**
+- **OpenAI / Codex**
+- **Google Gemini**
 
-## 快速开始
+**常见支持工具：**
+- **AI 编程助手：** Claude Code、Codex CLI、OpenCode、Gemini CLI、Continue、Aider、Goose
+- **桌面端 AI 聊天：** Cherry Studio、Kelivo、Chatbox、ChatWise (兼容 OpenAI API)
 
-1. 从 [Releases](https://github.com/lansespirit/Clipal/releases) 下载对应平台的二进制。
-   当前稳定版：[`v0.11.2`](https://github.com/lansespirit/Clipal/releases/tag/v0.11.2)
-2. 放到 `PATH` 中并确认版本：
+---
 
+## ⚡ 快速开始
+
+### 1. 下载安装
+前往 [Releases](https://github.com/lansespirit/Clipal/releases) 页面下载对应系统的二进制文件（当前稳定版：[`v0.11.2`](https://github.com/lansespirit/Clipal/releases/tag/v0.11.2)），并放入环境变量 `PATH` 中。
 ```bash
 chmod +x clipal*
 ./clipal* --version
 ```
 
-3. 初始化配置：
-
+### 2. 初始化配置
 ```bash
 mkdir -p ~/.clipal
 cp examples/config.yaml ~/.clipal/config.yaml
@@ -57,89 +67,44 @@ cp examples/claude.yaml ~/.clipal/claude.yaml
 cp examples/openai.yaml ~/.clipal/openai.yaml
 cp examples/gemini.yaml ~/.clipal/gemini.yaml
 ```
+*根据需要编辑 `~/.clipal/*.yaml`，填入你的 API Key。*
 
-4. 编辑 `~/.clipal/*.yaml`，填入你的 `api_key` 或 `api_keys`。
-5. 启动：
-
+### 3. 运行与管理
+在前台直接启动：
 ```bash
 clipal
 ```
-
-6. 验证并打开管理界面：
-
+或者将其安装为后台服务：
 ```bash
-curl -fsS http://127.0.0.1:3333/health
-clipal status
-```
-
-打开浏览器访问 `http://127.0.0.1:3333/`。
-
-## 示例配置文件
-
-- [examples/config.yaml](examples/config.yaml)
-- [examples/claude.yaml](examples/claude.yaml)
-- [examples/openai.yaml](examples/openai.yaml)
-- [examples/gemini.yaml](examples/gemini.yaml)
-
-## 常用命令
-
-```bash
-# 前台运行
-clipal
-
-# 查看状态
-clipal status
-clipal status --json
-
-# 管理后台服务
 clipal service install
-clipal service status
-clipal service restart
-clipal restart   # clipal service restart 的快捷写法
-
-# 检查或更新版本
-clipal update --check
-clipal update
+clipal service start
 ```
 
-## 文档导航
+### 4. 访问管理后台
+打开浏览器访问 `http://127.0.0.1:3333/`，即可管理所有模型并为你的常用 AI 工具开启 **CLI Takeover**。
 
-- [快速开始](docs/zh/getting-started.md)
-- [客户端接入](docs/zh/client-setup.md)
-- [配置参考](docs/zh/config-reference.md)
-- [Web UI 使用说明](docs/zh/web-ui.md)
-- [路由与故障切换](docs/zh/routing-and-failover.md)
-- [后台服务、状态与更新](docs/zh/services.md)
-- [排障与 FAQ](docs/zh/troubleshooting.md)
-- [macOS](docs/zh/macos.md) / [Linux](docs/zh/linux.md) / [Windows](docs/zh/windows.md)
-- [文档首页](docs/zh/README.md)
-- [Release Notes](release-notes/)
+---
 
-## 配置目录
+## 📖 完整文档导航
 
-默认配置目录：
+深入了解 Clipal 的全部能力：
+- 🚀 [快速开始](docs/zh/getting-started.md)
+- 🔌 [客户端接入指南](docs/zh/client-setup.md)
+- ⚙️ [配置参考](docs/zh/config-reference.md)
+- 🖥️ [Web UI 使用说明](docs/zh/web-ui.md)
+- 🔀 [路由与故障切换魔法](docs/zh/routing-and-failover.md)
+- 🛠️ [后台服务、状态与更新](docs/zh/services.md)
+- 📚 [文档首页](docs/zh/README.md) & [Release Notes](release-notes/)
 
-- macOS / Linux: `~/.clipal/`
-- Windows: `%USERPROFILE%\\.clipal\\`
+## 🔒 隐私与安全
 
-默认文件：
+- **100% 本地运行**：默认仅监听 `127.0.0.1:3333`。
+- **Web UI 隔离保护**：即使代理开启了对外网段访问 (`0.0.0.0`)，Web 管理界面也严格强制仅限本机 (loopback) 访问。
+- **真 Key 替换**：你在 Clipal 中配置的上游 API Key 只存在本地，Clipal 会在代理时自动覆盖并注入到真正的请求中，你可以在客户端放心地填入任何占位符。
 
-```text
-~/.clipal/
-├── config.yaml
-├── claude.yaml
-├── openai.yaml
-└── gemini.yaml
-```
+<div align="center">
+  <img src="assets/clipal-luffy2.jpeg" alt="Clipal" width="100%">
+</div>
 
-字段说明、示例和行为细节请看 [docs/zh/config-reference.md](docs/zh/config-reference.md)。
-
-## 安全说明
-
-- 代理默认监听 `127.0.0.1:3333`
-- Web UI 只允许本机访问，即使代理监听在 `0.0.0.0` 或 `::`，管理界面仍会拒绝非本机请求
-- Clipal 会根据本地配置覆盖上游认证头，客户端侧的占位 API Key 通常不会直接用于上游认证
-
-## License
-
+## 📄 License
 MIT
