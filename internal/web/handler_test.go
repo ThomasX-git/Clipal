@@ -180,6 +180,10 @@ func TestServeStatic_ContentTypeAndNotFound(t *testing.T) {
 		`class="metric-pill pill pill-status-compact integration-card-status"`,
 		`class="priority-badge badge badge-xs badge-outline badge-mono"`,
 		`class="pin-badge badge badge-xs badge-warning"`,
+		`service-action-shell`,
+		`service-action-layout`,
+		`service-action-main-row`,
+		`service-action-aside`,
 	} {
 		if !strings.Contains(index, want) {
 			t.Fatalf("index missing %q", want)
@@ -221,6 +225,10 @@ func TestServeStatic_ServesBrandIconAndUpdatedLabels(t *testing.T) {
 		`return 'Continue';`,
 		`return 'Aider';`,
 		`return 'Goose';`,
+		`serviceBusyAction: ''`,
+		`serviceActionDisabledReason(action) {`,
+		`return 'Service is already running';`,
+		`return 'Service is not running';`,
 	} {
 		if !strings.Contains(js, want) {
 			t.Fatalf("app.js missing %q", want)

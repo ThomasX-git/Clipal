@@ -220,7 +220,10 @@ type ServiceStatusResponse struct {
 	OS        string `json:"os"`
 	Supported bool   `json:"supported"`
 	Installed bool   `json:"installed"`
+	Loaded    bool   `json:"loaded"`
+	Running   bool   `json:"running"`
 	OK        bool   `json:"ok"`
+	Detail    string `json:"detail,omitempty"`
 	Output    string `json:"output,omitempty"`
 	Error     string `json:"error,omitempty"`
 

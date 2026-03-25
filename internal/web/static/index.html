@@ -455,30 +455,12 @@
                             <button type="button" class="metric-pill pill pill-sm" disabled
                                 :class="serviceStatus.supported ? 'pill-success' : 'pill-danger'"
                                 x-text="serviceStatus.supported ? 'Supported' : 'Unsupported'"></button>
-
-                            <template x-if="serviceStatus.supported && !serviceStatus.installed">
-                                <template x-if="serviceStatus.os === 'windows'">
-                                    <button type="button" class="metric-pill pill pill-sm pill-primary"
-                                        @click="copyServiceInstallCommand()">
-                                        Install
-                                    </button>
-                                </template>
-                                <template x-if="serviceStatus.os !== 'windows'">
-                                    <button type="button" class="metric-pill pill pill-sm pill-primary"
-                                        @click="serviceAction('install')">
-                                        Install
-                                    </button>
-                                </template>
-                            </template>
-                            <template x-if="!serviceStatus.supported || serviceStatus.installed">
-                                <button type="button" class="metric-pill pill pill-sm" disabled
-                                    :class="serviceStatus.installed ? 'pill-success' : 'pill-warning'"
-                                    x-text="serviceStatus.installed ? 'Installed' : 'Not installed'"></button>
-                            </template>
-
-                            <button type="button" class="metric-pill pill pill-sm pill-secondary" @click="loadServiceStatus()">
-                                Check
-                            </button>
+                            <button type="button" class="metric-pill pill pill-sm" disabled
+                                :class="serviceStatus.installed ? 'pill-success' : 'pill-warning'"
+                                x-text="serviceStatus.installed ? 'Installed' : 'Not installed'"></button>
+                            <button type="button" class="metric-pill pill pill-sm" disabled
+                                :class="serviceRuntimeClass()"
+                                x-text="serviceRuntimeLabel()"></button>
                         </div>
                     </div>
 
@@ -532,49 +514,94 @@
                         </div>
                     </template>
 
-                    <div class="kv-grid" style="margin-bottom: 20px;" x-show="serviceStatus.supported">
-                        <div class="kv-item">
-                            <div class="kv-label">Config Dir</div>
-                            <div class="kv-value" x-text="status.config_dir"></div>
-                        </div>
-                        <div class="kv-item" x-show="serviceStatus.error">
-                            <div class="kv-label">Last Error</div>
-                            <div class="kv-value" x-text="serviceStatus.error"></div>
-                        </div>
-                    </div>
+                    <div class="service-action-layout" x-show="serviceStatus.supported && serviceStatus.installed">
+                        <div class="service-action-main-row">
+                            <div class="service-action-group">
+                                <span class="service-action-shell"
+                                    :class="serviceActionDisabledReason('start') ? 'tooltip service-action-tooltip is-disabled' : ''"
+                                    :tabindex="serviceActionDisabledReason('start') ? 0 : null"
+                                    :aria-label="serviceActionDisabledReason('start') || null">
+                                    <button type="button" class="service-action-btn"
+                                        :class="[!serviceStatus.running ? 'service-action-primary' : 'service-action-secondary', serviceActionIsBusy('start') ? 'service-action-btn-busy' : '']"
+                                        :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('start')"
+                                        @click="serviceAction('start')"
+                                        x-text="serviceActionIsBusy('start') ? 'Working...' : 'Start'">
+                                    </button>
+                                    <span x-show="serviceActionDisabledReason('start')" class="tooltip-content"
+                                        x-text="serviceActionDisabledReason('start')"></span>
+                                </span>
+                                <span class="service-action-shell"
+                                    :class="serviceActionDisabledReason('restart') ? 'tooltip service-action-tooltip is-disabled' : ''"
+                                    :tabindex="serviceActionDisabledReason('restart') ? 0 : null"
+                                    :aria-label="serviceActionDisabledReason('restart') || null">
+                                    <button type="button" class="service-action-btn"
+                                        :class="[serviceStatus.running ? 'service-action-primary' : 'service-action-secondary', serviceActionIsBusy('restart') ? 'service-action-btn-busy' : '']"
+                                        :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('restart')"
+                                        @click="serviceAction('restart')"
+                                        x-text="serviceActionIsBusy('restart') ? 'Working...' : 'Restart'">
+                                    </button>
+                                    <span x-show="serviceActionDisabledReason('restart')" class="tooltip-content"
+                                        x-text="serviceActionDisabledReason('restart')"></span>
+                                </span>
+                                <span class="service-action-shell"
+                                    :class="serviceActionDisabledReason('stop') ? 'tooltip service-action-tooltip is-disabled' : ''"
+                                    :tabindex="serviceActionDisabledReason('stop') ? 0 : null"
+                                    :aria-label="serviceActionDisabledReason('stop') || null">
+                                    <button type="button" class="service-action-btn service-action-secondary"
+                                        :class="serviceActionIsBusy('stop') ? 'service-action-btn-busy' : ''"
+                                        :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('stop')"
+                                        @click="serviceAction('stop')"
+                                        x-text="serviceActionIsBusy('stop') ? 'Working...' : 'Stop'">
+                                    </button>
+                                    <span x-show="serviceActionDisabledReason('stop')" class="tooltip-content"
+                                        x-text="serviceActionDisabledReason('stop')"></span>
+                                </span>
+                                <span class="service-action-shell"
+                                    :class="serviceActionDisabledReason('uninstall') ? 'tooltip service-action-tooltip is-disabled' : ''"
+                                    :tabindex="serviceActionDisabledReason('uninstall') ? 0 : null"
+                                    :aria-label="serviceActionDisabledReason('uninstall') || null">
+                                    <button type="button" class="service-action-btn service-action-danger"
+                                        :class="serviceActionIsBusy('uninstall') ? 'service-action-btn-busy' : ''"
+                                        :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('uninstall')"
+                                        @click="serviceAction('uninstall')"
+                                        x-text="serviceActionIsBusy('uninstall') ? 'Working...' : 'Uninstall'">
+                                    </button>
+                                    <span x-show="serviceActionDisabledReason('uninstall')" class="tooltip-content"
+                                        x-text="serviceActionDisabledReason('uninstall')"></span>
+                                </span>
+                                <button type="button" class="service-action-btn service-action-secondary" @click="loadServiceStatus()">
+                                    Check
+                                </button>
+                            </div>
 
-                    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px;"
-                        x-show="serviceStatus.supported && serviceStatus.installed">
-                        <label class="checkbox-label" title="Reinstall/update the system service if it already exists">
-                            <input type="checkbox" x-model="serviceForm.force">
-                            <span class="checkbox-text">Force</span>
-                        </label>
+                            <div class="service-action-secondary-row service-action-aside">
+                                <label class="checkbox-label service-force-toggle"
+                                    title="Reinstall or refresh the existing service definition when needed">
+                                <input type="checkbox" x-model="serviceForm.force">
+                                <span class="checkbox-text">Force</span>
+                                </label>
 
-                        <button type="button" class="btn btn-primary" @click="serviceAction('install')">
-                            Install
-                        </button>
-                        <button type="button" class="btn btn-secondary" @click="serviceAction('start')"
-                            :disabled="!serviceStatus.installed">
-                            Start
-                        </button>
-                        <button type="button" class="btn btn-secondary" @click="serviceAction('stop')"
-                            :disabled="!serviceStatus.installed">
-                            Stop
-                        </button>
-                        <button type="button" class="btn btn-primary" @click="serviceAction('restart')"
-                            :disabled="!serviceStatus.installed">
-                            Restart
-                        </button>
-                        <button type="button" class="btn btn-danger" @click="serviceAction('uninstall')"
-                            :disabled="!serviceStatus.installed">
-                            Uninstall
-                        </button>
+                                <span class="service-action-shell"
+                                    :class="serviceActionDisabledReason('install') ? 'tooltip service-action-tooltip is-disabled' : ''"
+                                    :tabindex="serviceActionDisabledReason('install') ? 0 : null"
+                                    :aria-label="serviceActionDisabledReason('install') || null">
+                                    <button type="button" class="service-action-btn service-action-secondary"
+                                        :class="serviceActionIsBusy('install') ? 'service-action-btn-busy' : ''"
+                                        :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('install')"
+                                        @click="serviceAction('install')"
+                                        x-text="serviceActionIsBusy('install') ? 'Working...' : 'Reinstall'">
+                                    </button>
+                                    <span x-show="serviceActionDisabledReason('install')" class="tooltip-content"
+                                        x-text="serviceActionDisabledReason('install')"></span>
+                                </span>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="form-hint" style="margin-bottom: 12px;"
                         x-show="serviceStatus.supported && serviceStatus.installed">
-                        Note: restart/stop may temporarily disconnect this page. Status auto-refreshes every 3s while
-                        this tab is open.
+                        Restart or stop may temporarily disconnect this page. Status auto-refreshes every 3s while this
+                        tab is open.
                     </div>
 
                     <pre class="log-output"
@@ -594,10 +621,6 @@
                         <h3 class="provider-name">System Info</h3>
                     </div>
                     <div class="kv-grid">
-                        <div class="kv-item">
-                            <div class="kv-label">Version</div>
-                            <div class="kv-value" x-text="status.version"></div>
-                        </div>
                         <div class="kv-item">
                             <div class="kv-label">Uptime</div>
                             <div class="kv-value" x-text="status.uptime"></div>

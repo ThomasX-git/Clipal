@@ -14,7 +14,13 @@ import (
 func TestHandleServiceStatus_InstalledButStoppedIsNotOK(t *testing.T) {
 	api := NewAPI(t.TempDir(), "test", nil)
 	stubServiceGetStatus(t, func(context.Context, service.Options) (service.Status, string, error) {
-		return service.Status{Manager: "systemd", Installed: true, Loaded: true, Running: false}, "ActiveState=inactive", nil
+		return service.Status{
+			Manager:   "systemd",
+			Installed: true,
+			Loaded:    true,
+			Running:   false,
+			Detail:    "active=inactive sub=dead",
+		}, "ActiveState=inactive", nil
 	})
 
 	resp := runServiceStatusRequest(t, api)
@@ -26,6 +32,12 @@ func TestHandleServiceStatus_InstalledButStoppedIsNotOK(t *testing.T) {
 	}
 	if resp.OK {
 		t.Fatalf("expected stopped service to report ok=false: %#v", resp)
+	}
+	if !resp.Loaded || resp.Running {
+		t.Fatalf("expected loaded=true running=false: %#v", resp)
+	}
+	if resp.Detail != "active=inactive sub=dead" {
+		t.Fatalf("detail = %q", resp.Detail)
 	}
 	if resp.Output != "ActiveState=inactive" {
 		t.Fatalf("output = %q", resp.Output)
@@ -42,6 +54,9 @@ func TestHandleServiceStatus_RunningServiceIsOK(t *testing.T) {
 	if !resp.OK || !resp.Supported || !resp.Installed {
 		t.Fatalf("response = %#v", resp)
 	}
+	if !resp.Loaded || !resp.Running {
+		t.Fatalf("expected loaded=true running=true: %#v", resp)
+	}
 }
 
 func TestHandleServiceStatus_UnsupportedManager(t *testing.T) {
@@ -54,7 +69,7 @@ func TestHandleServiceStatus_UnsupportedManager(t *testing.T) {
 	if resp.Supported {
 		t.Fatalf("expected unsupported manager to report supported=false: %#v", resp)
 	}
-	if resp.Installed || resp.OK {
+	if resp.Installed || resp.OK || resp.Loaded || resp.Running {
 		t.Fatalf("unexpected installed/ok state: %#v", resp)
 	}
 }
@@ -69,7 +84,7 @@ func TestHandleServiceStatus_NotInstalledIncludesInstallGuidance(t *testing.T) {
 	if !resp.Supported {
 		t.Fatalf("response = %#v", resp)
 	}
-	if resp.Installed || resp.OK {
+	if resp.Installed || resp.OK || resp.Loaded || resp.Running {
 		t.Fatalf("unexpected installed/ok state: %#v", resp)
 	}
 	if resp.InstallCommand == "" {

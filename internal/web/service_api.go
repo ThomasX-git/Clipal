@@ -56,7 +56,10 @@ func (a *API) HandleServiceStatus(w http.ResponseWriter, r *http.Request) {
 		OS:        osName,
 		Supported: supported,
 		Installed: st.Installed,
+		Loaded:    st.Loaded,
+		Running:   st.Running,
 		OK:        st.Loaded && st.Running,
+		Detail:    st.Detail,
 		Output:    out,
 	}
 

@@ -8,6 +8,7 @@ function app() {
         selectedClient: 'claude',
         integrations: [],
         integrationBusyProduct: '',
+        serviceBusyAction: '',
         clientOptions: [
             { value: 'claude', label: 'Claude' },
             { value: 'openai', label: 'OpenAI' },
@@ -55,7 +56,10 @@ function app() {
             install_hint: '',
             supported: true,
             installed: false,
+            loaded: false,
+            running: false,
             ok: false,
+            detail: '',
             output: '',
             error: ''
         },
@@ -89,6 +93,24 @@ function app() {
             out.notifications = { ...def.notifications, ...((cfg && cfg.notifications) ? cfg.notifications : {}) };
             out.circuit_breaker = { ...def.circuit_breaker, ...((cfg && cfg.circuit_breaker) ? cfg.circuit_breaker : {}) };
             return out;
+        },
+
+        withDefaultServiceStatus(status) {
+            const def = this.serviceStatus;
+            return {
+                ...def,
+                ...(status || {}),
+                supported: status && typeof status.supported === 'boolean' ? status.supported : def.supported,
+                installed: status && typeof status.installed === 'boolean' ? status.installed : def.installed,
+                loaded: status && typeof status.loaded === 'boolean' ? status.loaded : def.loaded,
+                running: status && typeof status.running === 'boolean' ? status.running : def.running,
+                ok: status && typeof status.ok === 'boolean' ? status.ok : def.ok,
+                install_command: String((status && status.install_command) || ''),
+                install_hint: String((status && status.install_hint) || ''),
+                detail: String((status && status.detail) || ''),
+                output: String((status && status.output) || ''),
+                error: String((status && status.error) || '')
+            };
         },
 
         // Initialization
@@ -236,18 +258,25 @@ function app() {
         // Services
         async loadServiceStatus(background = false) {
             try {
-                this.serviceStatus = await this.apiCall('/api/service/status', {}, !!background);
+                const status = await this.apiCall('/api/service/status', {}, !!background);
+                this.serviceStatus = this.withDefaultServiceStatus(status);
+                this.serviceBusyAction = '';
             } catch (error) {
                 console.error('Failed to load service status:', error);
             }
         },
 
         async serviceAction(action) {
+            const disabledReason = this.serviceActionDisabledReason(action);
+            if (disabledReason) {
+                return;
+            }
             if (action === 'uninstall' && !confirm('Uninstall the system service?')) return;
             if (action === 'stop' && !confirm('Stop the system service?')) return;
             if (action === 'restart' && !confirm('Restart the system service?')) return;
 
             // Best-effort request: the service might stop/restart mid-flight.
+            this.serviceBusyAction = action;
             try {
                 await fetch(`/api/service/${action}`, {
                     method: 'POST',
@@ -264,6 +293,11 @@ function app() {
             setTimeout(() => this.loadServiceStatus(true), 1500);
             setTimeout(() => this.loadServiceStatus(true), 3500);
             setTimeout(() => this.loadServiceStatus(true), 7000);
+            setTimeout(() => {
+                if (this.serviceBusyAction === action) {
+                    this.serviceBusyAction = '';
+                }
+            }, 9000);
         },
 
         async copyToClipboard(text) {
@@ -299,6 +333,60 @@ function app() {
             const ok = await this.copyToClipboard(this.serviceStatus.install_command);
             if (ok) this.showAlert('success', 'Install command copied');
             else this.showAlert('error', 'Failed to copy command');
+        },
+
+        serviceRuntimeLabel() {
+            if (!this.serviceStatus.supported) return 'Unsupported';
+            if (!this.serviceStatus.installed) return 'Not installed';
+            if (this.serviceStatus.running) return 'Running';
+            if (this.serviceStatus.loaded) return 'Stopped';
+            return 'Needs attention';
+        },
+
+        serviceRuntimeClass() {
+            if (!this.serviceStatus.supported) return 'pill-danger';
+            if (!this.serviceStatus.installed) return 'pill-warning';
+            if (this.serviceStatus.running) return 'pill-success';
+            if (this.serviceStatus.loaded) return 'pill-warning';
+            return 'pill-danger';
+        },
+
+        serviceActionIsBusy(action) {
+            return this.serviceBusyAction === action;
+        },
+
+        serviceActionDisabledReason(action) {
+            if (this.serviceActionIsBusy(action) || action === 'check') {
+                return '';
+            }
+            if (!this.serviceStatus.supported) {
+                return 'Service manager is not supported on this OS';
+            }
+
+            switch (String(action || '').trim()) {
+                case 'install':
+                    if (!this.serviceStatus.installed) return '';
+                    return this.serviceForm.force
+                        ? ''
+                        : 'Already installed. Enable Force to reinstall or refresh the service definition.';
+                case 'start':
+                    if (!this.serviceStatus.installed) return 'Install the service first';
+                    if (this.serviceStatus.running) return 'Service is already running';
+                    return '';
+                case 'stop':
+                    if (!this.serviceStatus.installed) return 'Install the service first';
+                    if (!this.serviceStatus.running) return 'Service is not running';
+                    return '';
+                case 'restart':
+                    if (!this.serviceStatus.installed) return 'Install the service first';
+                    if (!this.serviceStatus.running) return 'Service is not running';
+                    return '';
+                case 'uninstall':
+                    if (!this.serviceStatus.installed) return 'Service is not installed';
+                    return '';
+                default:
+                    return '';
+            }
         },
 
         integrationStateLabel(state) {
