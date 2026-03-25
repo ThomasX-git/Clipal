@@ -239,6 +239,76 @@ func TestHandleUpdateGlobalConfig_AcceptsSnakeCaseNotifications(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateGlobalConfig_AllowsClearingRoutingStrings(t *testing.T) {
+	dir := t.TempDir()
+	api := NewAPI(dir, "test", nil)
+
+	initial := config.DefaultGlobalConfig()
+	initial.Routing.StickySessions.ExplicitTTL = "45m"
+	initial.Routing.BusyBackpressure.ShortRetryAfterMax = "5s"
+	initial.Routing.BusyBackpressure.MaxInlineWait = "12s"
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), formatGlobalConfigYAML(initial), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	body := []byte(`{
+  "listen_addr": "127.0.0.1",
+  "port": 3333,
+  "log_level": "info",
+  "reactivate_after": "10m",
+  "upstream_idle_timeout": "1m",
+  "response_header_timeout": "30s",
+  "max_request_body_bytes": 12345,
+  "log_dir": "",
+  "log_retention_days": 7,
+  "log_stdout": true,
+  "notifications": {
+    "enabled": true,
+    "min_level": "warn",
+    "provider_switch": false
+  },
+  "routing": {
+    "sticky_sessions": {
+      "enabled": true,
+      "explicit_ttl": ""
+    },
+    "busy_backpressure": {
+      "enabled": true,
+      "short_retry_after_max": "",
+      "max_inline_wait": ""
+    }
+  },
+  "circuit_breaker": {
+    "failure_threshold": 4,
+    "success_threshold": 2,
+    "open_timeout": "60s",
+    "half_open_max_inflight": 1
+  }
+}`)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/config/global/update", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	api.HandleUpdateGlobalConfig(w, req)
+	res := w.Result()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", res.StatusCode, w.Body.String())
+	}
+
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if cfg.Global.Routing.StickySessions.ExplicitTTL != "" {
+		t.Fatalf("expected routing.sticky_sessions.explicit_ttl to be cleared, got %q", cfg.Global.Routing.StickySessions.ExplicitTTL)
+	}
+	if cfg.Global.Routing.BusyBackpressure.ShortRetryAfterMax != "" {
+		t.Fatalf("expected routing.busy_backpressure.short_retry_after_max to be cleared, got %q", cfg.Global.Routing.BusyBackpressure.ShortRetryAfterMax)
+	}
+	if cfg.Global.Routing.BusyBackpressure.MaxInlineWait != "" {
+		t.Fatalf("expected routing.busy_backpressure.max_inline_wait to be cleared, got %q", cfg.Global.Routing.BusyBackpressure.MaxInlineWait)
+	}
+}
+
 func TestHandleAddProvider_AcceptsAPIKeys(t *testing.T) {
 	dir := t.TempDir()
 	api := NewAPI(dir, "test", nil)

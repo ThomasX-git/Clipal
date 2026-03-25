@@ -680,7 +680,7 @@ func validateProviders(clientName string, providers []Provider) error {
 
 func validateRoutingConfig(rc RoutingConfig) error {
 	if rc.StickySessions.Enabled {
-		if err := validatePositiveDuration("routing.sticky_sessions.explicit_ttl", rc.StickySessions.ExplicitTTL); err != nil {
+		if err := validateOptionalPositiveDuration("routing.sticky_sessions.explicit_ttl", rc.StickySessions.ExplicitTTL); err != nil {
 			return err
 		}
 		if err := validatePositiveDuration("routing.sticky_sessions.cache_hint_ttl", rc.StickySessions.CacheHintTTL); err != nil {
@@ -709,10 +709,10 @@ func validateRoutingConfig(rc RoutingConfig) error {
 		if rc.BusyBackpressure.ProbeMaxInFlight < 0 {
 			return fmt.Errorf("invalid routing.busy_backpressure.probe_max_inflight: %d", rc.BusyBackpressure.ProbeMaxInFlight)
 		}
-		if err := validatePositiveDuration("routing.busy_backpressure.short_retry_after_max", rc.BusyBackpressure.ShortRetryAfterMax); err != nil {
+		if err := validateOptionalPositiveDuration("routing.busy_backpressure.short_retry_after_max", rc.BusyBackpressure.ShortRetryAfterMax); err != nil {
 			return err
 		}
-		if err := validatePositiveDuration("routing.busy_backpressure.max_inline_wait", rc.BusyBackpressure.MaxInlineWait); err != nil {
+		if err := validateOptionalPositiveDuration("routing.busy_backpressure.max_inline_wait", rc.BusyBackpressure.MaxInlineWait); err != nil {
 			return err
 		}
 	}
@@ -726,4 +726,11 @@ func validatePositiveDuration(field string, value string) error {
 		return fmt.Errorf("invalid %s: %s", field, value)
 	}
 	return nil
+}
+
+func validateOptionalPositiveDuration(field string, value string) error {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return validatePositiveDuration(field, value)
 }

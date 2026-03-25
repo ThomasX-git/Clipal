@@ -45,14 +45,14 @@ type RoutingConfigRequest struct {
 }
 
 type StickySessionsConfigRequest struct {
-	Enabled     *bool  `json:"enabled,omitempty"`
-	ExplicitTTL string `json:"explicit_ttl,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty"`
+	ExplicitTTL *string `json:"explicit_ttl,omitempty"`
 }
 
 type BusyBackpressureConfigRequest struct {
-	Enabled            *bool  `json:"enabled,omitempty"`
-	ShortRetryAfterMax string `json:"short_retry_after_max,omitempty"`
-	MaxInlineWait      string `json:"max_inline_wait,omitempty"`
+	Enabled            *bool   `json:"enabled,omitempty"`
+	ShortRetryAfterMax *string `json:"short_retry_after_max,omitempty"`
+	MaxInlineWait      *string `json:"max_inline_wait,omitempty"`
 }
 
 // GlobalConfigResponse represents the global configuration returned to the UI.
