@@ -254,7 +254,7 @@ func yamlDoubleQuote(s string) string {
 		default:
 			if c < 0x20 {
 				// Control characters should be escaped in YAML double quotes.
-				_, _ = b.WriteString(fmt.Sprintf(`\x%02x`, c))
+				_, _ = fmt.Fprintf(&b, `\x%02x`, c)
 				continue
 			}
 			_ = b.WriteByte(c)

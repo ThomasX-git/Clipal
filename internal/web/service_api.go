@@ -149,6 +149,7 @@ func (a *API) spawnServiceHelper(action service.Action, req ServiceActionRequest
 		args = append(args, "--stderr", s)
 	}
 
+	//nolint:gosec // BinaryPath comes from os.Executable and args are passed directly without shell interpolation.
 	cmd := exec.Command(opts.BinaryPath, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

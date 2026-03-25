@@ -75,6 +75,7 @@ type configFileBackup struct {
 	perm    fs.FileMode
 }
 
+//nolint:gosec // path is derived from Clipal-managed config file locations under the configured data directory.
 func snapshotConfigFile(path string) (configFileBackup, error) {
 	fi, err := os.Stat(path)
 	if err != nil {

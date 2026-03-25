@@ -32,6 +32,8 @@ clipal service stop
 clipal service uninstall
 ```
 
+文档和脚本里仍以 `clipal service restart` 作为规范写法；交互式使用时，也可以直接用快捷命令 `clipal restart`。
+
 常用参数：
 
 ```bash
@@ -89,6 +91,7 @@ clipal service status
 ```bash
 clipal update
 clipal service restart
+clipal restart   # 快捷写法
 clipal status
 ```
 

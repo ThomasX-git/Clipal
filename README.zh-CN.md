@@ -40,7 +40,7 @@ Clipal 现在将客户端入口统一规范到单一路由：
 ## 快速开始
 
 1. 从 [Releases](https://github.com/lansespirit/Clipal/releases) 下载对应平台的二进制。
-   当前稳定版：[`v0.10.0`](https://github.com/lansespirit/Clipal/releases/tag/v0.10.0)
+   当前稳定版：[`v0.11.2`](https://github.com/lansespirit/Clipal/releases/tag/v0.11.2)
 2. 放到 `PATH` 中并确认版本：
 
 ```bash
@@ -95,6 +95,7 @@ clipal status --json
 clipal service install
 clipal service status
 clipal service restart
+clipal restart   # clipal service restart 的快捷写法
 
 # 检查或更新版本
 clipal update --check

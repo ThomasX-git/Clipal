@@ -32,6 +32,8 @@ clipal service stop
 clipal service uninstall
 ```
 
+`clipal service restart` remains the canonical form in docs and scripts. For interactive use, `clipal restart` is available as a shortcut.
+
 Common flags:
 
 ```bash
@@ -89,6 +91,7 @@ After updating:
 ```bash
 clipal update
 clipal service restart
+clipal restart   # shortcut
 clipal status
 ```
 

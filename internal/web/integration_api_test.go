@@ -35,14 +35,13 @@ func TestHandleListIntegrations_ReturnsSupportedProducts(t *testing.T) {
 		t.Fatalf("len = %d", len(got))
 	}
 
-	products := []string{
-		got[0]["product"].(string),
-		got[1]["product"].(string),
-		got[2]["product"].(string),
-		got[3]["product"].(string),
-		got[4]["product"].(string),
-		got[5]["product"].(string),
-		got[6]["product"].(string),
+	products := make([]string, 0, len(got))
+	for i, item := range got {
+		product, ok := item["product"].(string)
+		if !ok {
+			t.Fatalf("product[%d] has unexpected type: %#v", i, item["product"])
+		}
+		products = append(products, product)
 	}
 	if strings.Join(products, ",") != "claude,codex,opencode,gemini,continue,aider,goose" {
 		t.Fatalf("products = %v", products)

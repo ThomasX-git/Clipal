@@ -187,22 +187,6 @@ func restoreBackupSnapshot(snap backupSnapshot) error {
 	return nil
 }
 
-func (m Manager) claudeHasCompletedOnboarding() (bool, error) {
-	targetPath, err := m.claudeHomeConfigPath()
-	if err != nil {
-		return false, err
-	}
-	body, err := readJSONMap(targetPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("read Claude home config: %w", err)
-	}
-	value, _ := body["hasCompletedOnboarding"].(bool)
-	return value, nil
-}
-
 func (m Manager) ensureClaudeOnboardingCompleted() error {
 	targetPath, err := m.claudeHomeConfigPath()
 	if err != nil {
@@ -232,6 +216,7 @@ func (m Manager) ensureClaudeOnboardingCompleted() error {
 	return nil
 }
 
+//nolint:gosec // backupDir is created by Clipal under its managed backup root.
 func (m Manager) backupClaudeHomeConfig(backupDir string) error {
 	targetPath, err := m.claudeHomeConfigPath()
 	if err != nil {
@@ -262,6 +247,7 @@ func (m Manager) backupClaudeHomeConfig(backupDir string) error {
 	return nil
 }
 
+//nolint:gosec // backupDir and TargetPath come from Clipal-managed backup metadata.
 func (m Manager) restoreClaudeHomeConfig(backupDir string) error {
 	metaPath := filepath.Join(backupDir, claudeHomeConfigBackupMetaName)
 	metaData, err := os.ReadFile(metaPath)

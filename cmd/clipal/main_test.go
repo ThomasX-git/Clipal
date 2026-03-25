@@ -34,6 +34,7 @@ func resetForMainTest() {
 func runMainHelper(t *testing.T, args ...string) (string, int) {
 	t.Helper()
 
+	//nolint:gosec // Tests intentionally re-exec the current test binary as a helper process.
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess")
 	cmd.Env = append(os.Environ(),
 		"CLIPAL_MAIN_HELPER=1",
@@ -129,6 +130,171 @@ func TestMainVersionFlag(t *testing.T) {
 	}
 }
 
+func TestResolveRootCommand(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		args     []string
+		wantCmd  rootCommand
+		wantArgs []string
+		wantErr  string
+	}{
+		{
+			name:    "NoArgsRunsServer",
+			wantCmd: rootCommandRun,
+		},
+		{
+			name:     "RootFlagsRunServer",
+			args:     []string{"--version"},
+			wantCmd:  rootCommandRun,
+			wantArgs: []string{"--version"},
+		},
+		{
+			name:     "RestartAliasRoutesToService",
+			args:     []string{"restart", "--dry-run"},
+			wantCmd:  rootCommandService,
+			wantArgs: []string{"restart", "--dry-run"},
+		},
+		{
+			name:     "ServiceCommandPassesThrough",
+			args:     []string{"service", "restart"},
+			wantCmd:  rootCommandService,
+			wantArgs: []string{"restart"},
+		},
+		{
+			name:    "HelpTokenShowsRootHelp",
+			args:    []string{"help"},
+			wantCmd: rootCommandHelp,
+		},
+		{
+			name:    "ShortHelpFlagShowsRootHelp",
+			args:    []string{"-h"},
+			wantCmd: rootCommandHelp,
+		},
+		{
+			name:    "UnknownCommandReturnsError",
+			args:    []string{"restart-now"},
+			wantErr: `unknown command "restart-now"`,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotCmd, gotArgs, err := resolveRootCommand(tt.args)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error %q, got nil", tt.wantErr)
+				}
+				if err.Error() != tt.wantErr {
+					t.Fatalf("err=%q want=%q", err.Error(), tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveRootCommand(%v): %v", tt.args, err)
+			}
+			if gotCmd != tt.wantCmd {
+				t.Fatalf("cmd=%q want=%q", gotCmd, tt.wantCmd)
+			}
+			if fmt.Sprintf("%q", gotArgs) != fmt.Sprintf("%q", tt.wantArgs) {
+				t.Fatalf("args=%q want=%q", gotArgs, tt.wantArgs)
+			}
+		})
+	}
+}
+
+func TestMainHelpFlagShowsCommands(t *testing.T) {
+	out, code := runMainHelper(t, "-h")
+	if code != 0 {
+		t.Fatalf("exit code = %d, out=%s", code, out)
+	}
+	if !strings.Contains(out, "Commands:") || !strings.Contains(out, "clipal restart") {
+		t.Fatalf("unexpected help output: %s", out)
+	}
+}
+
+func TestMainServiceHelpShowsUsage(t *testing.T) {
+	out, code := runMainHelper(t, "service", "--help")
+	if code != 0 {
+		t.Fatalf("exit code = %d, out=%s", code, out)
+	}
+	if !strings.Contains(out, "usage: clipal service") || !strings.Contains(out, "clipal service restart") {
+		t.Fatalf("unexpected help output: %s", out)
+	}
+}
+
+func TestMainUnknownCommandShowsUsage(t *testing.T) {
+	out, code := runMainHelper(t, "restart-now")
+	if code != 2 {
+		t.Fatalf("exit code = %d, out=%s", code, out)
+	}
+	if !strings.Contains(out, `clipal: unknown command "restart-now"`) {
+		t.Fatalf("unexpected error output: %s", out)
+	}
+	if !strings.Contains(out, "clipal restart") {
+		t.Fatalf("expected usage hint in output: %s", out)
+	}
+}
+
+func TestRenderUpdateResultOutput(t *testing.T) {
+	t.Parallel()
+
+	plan := &updatePlan{
+		CurrentVersion:  "v0.11.0",
+		LatestVersion:   "v0.11.1",
+		ExecutablePath:  "/tmp/clipal",
+		BinaryAssetName: "clipal-darwin-arm64",
+		ChecksumsName:   "checksums.txt",
+		DownloadURL:     "https://example.com/clipal",
+	}
+
+	t.Run("UpdatedIncludesRestartHint", func(t *testing.T) {
+		t.Parallel()
+		out := renderUpdateResultOutput(plan, updateResultOptions{
+			Updated: true,
+			GOOS:    "darwin",
+		})
+		if !strings.Contains(out, "updated: v0.11.0 -> v0.11.1") {
+			t.Fatalf("missing update line: %s", out)
+		}
+		if !strings.Contains(out, "clipal restart") {
+			t.Fatalf("missing restart hint: %s", out)
+		}
+	})
+
+	t.Run("WindowsScheduledIncludesRestartHint", func(t *testing.T) {
+		t.Parallel()
+		out := renderUpdateResultOutput(plan, updateResultOptions{
+			Updated: true,
+			GOOS:    "windows",
+		})
+		if !strings.Contains(out, "update scheduled: v0.11.0 -> v0.11.1") {
+			t.Fatalf("missing scheduled line: %s", out)
+		}
+		if !strings.Contains(out, "clipal restart") {
+			t.Fatalf("missing restart hint: %s", out)
+		}
+	})
+
+	t.Run("UpToDateHasNoRestartHint", func(t *testing.T) {
+		t.Parallel()
+		out := renderUpdateResultOutput(plan, updateResultOptions{
+			Updated: false,
+			GOOS:    "darwin",
+		})
+		if !strings.Contains(out, "up to date: v0.11.0") {
+			t.Fatalf("missing up-to-date line: %s", out)
+		}
+		if strings.Contains(out, "clipal restart") {
+			t.Fatalf("unexpected restart hint: %s", out)
+		}
+	})
+}
+
 func TestMainConfigLoadFailure(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("unknown_field: true\n"), 0o600); err != nil {
@@ -182,6 +348,7 @@ func TestMainSignalShutdownPath(t *testing.T) {
 	dir := t.TempDir()
 	writeMainConfig(t, dir, port, "")
 
+	//nolint:gosec // Tests intentionally re-exec the current test binary as a helper process.
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess")
 	cmd.Env = append(os.Environ(),
 		"CLIPAL_MAIN_HELPER=1",

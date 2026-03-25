@@ -5,10 +5,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,32 +25,153 @@ var (
 	date    = "unknown"
 )
 
+type rootCommand string
+
+const (
+	rootCommandRun         rootCommand = "run"
+	rootCommandHelp        rootCommand = "help"
+	rootCommandUpdate      rootCommand = "update"
+	rootCommandStatus      rootCommand = "status"
+	rootCommandService     rootCommand = "service"
+	rootCommandApplyUpdate rootCommand = "__apply-update"
+)
+
+type updatePlan struct {
+	CurrentVersion  string
+	LatestVersion   string
+	ExecutablePath  string
+	BinaryAssetName string
+	ChecksumsName   string
+	DownloadURL     string
+}
+
+type updateResultOptions struct {
+	Check   bool
+	DryRun  bool
+	Updated bool
+	GOOS    string
+}
+
 func main() {
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "update":
-			runUpdate(os.Args[2:])
-			return
-		case "status":
-			runStatus(os.Args[2:])
-			return
-		case "service":
-			runService(os.Args[2:])
-			return
-		case "__apply-update":
-			runApplyUpdate(os.Args[2:])
-			return
-		}
+	cmd, args, err := resolveRootCommand(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "clipal: %v\n\n", err)
+		printRootUsage(os.Stderr)
+		os.Exit(2)
 	}
 
-	// Parse command line flags
-	configDir := flag.String("config-dir", "", "Configuration directory (default: ~/.clipal)")
-	listenAddr := flag.String("listen-addr", "", "Override listen address from config (default: 127.0.0.1)")
-	port := flag.Int("port", 0, "Override port from config")
-	logLevel := flag.String("log-level", "", "Override log level (debug/info/warn/error)")
-	detachConsole := flag.Bool("detach-console", false, "Windows: detach console window (used by Task Scheduler)")
-	showVersion := flag.Bool("version", false, "Show version information")
-	flag.Parse()
+	switch cmd {
+	case rootCommandHelp:
+		printRootUsage(os.Stdout)
+		return
+	case rootCommandUpdate:
+		runUpdate(args)
+		return
+	case rootCommandStatus:
+		runStatus(args)
+		return
+	case rootCommandService:
+		runService(args)
+		return
+	case rootCommandApplyUpdate:
+		runApplyUpdate(args)
+		return
+	case rootCommandRun:
+		runServer(args)
+		return
+	default:
+		fmt.Fprintf(os.Stderr, "clipal: unsupported command %q\n", cmd)
+		os.Exit(2)
+	}
+}
+
+func resolveRootCommand(args []string) (rootCommand, []string, error) {
+	if len(args) == 0 {
+		return rootCommandRun, nil, nil
+	}
+
+	switch args[0] {
+	case "help", "-h", "--help":
+		return rootCommandHelp, nil, nil
+	case "update":
+		return rootCommandUpdate, args[1:], nil
+	case "status":
+		return rootCommandStatus, args[1:], nil
+	case "service":
+		return rootCommandService, args[1:], nil
+	case "__apply-update":
+		return rootCommandApplyUpdate, args[1:], nil
+	case "restart":
+		return rootCommandService, append([]string{"restart"}, args[1:]...), nil
+	}
+
+	if strings.HasPrefix(args[0], "-") {
+		return rootCommandRun, args, nil
+	}
+	return "", nil, fmt.Errorf("unknown command %q", args[0])
+}
+
+func printRootUsage(w io.Writer) {
+	fmt.Fprintln(w, "usage:")
+	fmt.Fprintln(w, "  clipal [flags]")
+	fmt.Fprintln(w, "  clipal <command> [args]")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Commands:")
+	fmt.Fprintln(w, "  status            Show runtime and service status without starting the server")
+	fmt.Fprintln(w, "  service           Install and manage the background service")
+	fmt.Fprintln(w, "  update            Check for updates or replace the current binary in place")
+	fmt.Fprintln(w, "  restart           Shortcut for 'clipal service restart'")
+	fmt.Fprintln(w, "  help              Show this help")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Flags:")
+	fmt.Fprintln(w, "  -config-dir string")
+	fmt.Fprintln(w, "        Configuration directory (default: ~/.clipal)")
+	fmt.Fprintln(w, "  -detach-console")
+	fmt.Fprintln(w, "        Windows: detach console window (used by Task Scheduler)")
+	fmt.Fprintln(w, "  -listen-addr string")
+	fmt.Fprintln(w, "        Override listen address from config (default: 127.0.0.1)")
+	fmt.Fprintln(w, "  -log-level string")
+	fmt.Fprintln(w, "        Override log level (debug/info/warn/error)")
+	fmt.Fprintln(w, "  -port int")
+	fmt.Fprintln(w, "        Override port from config")
+	fmt.Fprintln(w, "  -version")
+	fmt.Fprintln(w, "        Show version information")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Examples:")
+	fmt.Fprintln(w, "  clipal")
+	fmt.Fprintln(w, "  clipal status")
+	fmt.Fprintln(w, "  clipal restart")
+	fmt.Fprintln(w, "  clipal service install")
+	fmt.Fprintln(w, "  clipal update")
+}
+
+func runServer(args []string) {
+	fs := flag.NewFlagSet("clipal", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		printRootUsage(os.Stderr)
+	}
+
+	configDir := fs.String("config-dir", "", "Configuration directory (default: ~/.clipal)")
+	listenAddr := fs.String("listen-addr", "", "Override listen address from config (default: 127.0.0.1)")
+	port := fs.Int("port", 0, "Override port from config")
+	logLevel := fs.String("log-level", "", "Override log level (debug/info/warn/error)")
+	detachConsole := fs.Bool("detach-console", false, "Windows: detach console window (used by Task Scheduler)")
+	showVersion := fs.Bool("version", false, "Show version information")
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			printRootUsage(os.Stdout)
+			return
+		}
+		os.Exit(2)
+	}
+
+	if extra := fs.Args(); len(extra) > 0 {
+		fmt.Fprintf(os.Stderr, "clipal: unexpected argument %q\n\n", extra[0])
+		printRootUsage(os.Stderr)
+		os.Exit(2)
+	}
 
 	if *showVersion {
 		fmt.Printf("clipal %s (commit: %s, built: %s)\n", version, commit, date)
@@ -151,33 +274,71 @@ func runUpdate(args []string) {
 		os.Exit(1)
 	}
 
-	if *check {
-		if needsOrUpdated {
-			fmt.Printf("update available: %s -> %s\n", plan.CurrentVersion, plan.LatestVersion)
+	fmt.Print(renderUpdateResultOutput(updatePlanFromSelfUpdate(plan), updateResultOptions{
+		Check:   *check,
+		DryRun:  *dryRun,
+		Updated: needsOrUpdated,
+		GOOS:    runtime.GOOS,
+	}))
+}
+
+func updatePlanFromSelfUpdate(plan *selfupdate.Plan) *updatePlan {
+	if plan == nil {
+		return &updatePlan{}
+	}
+	return &updatePlan{
+		CurrentVersion:  plan.CurrentVersion,
+		LatestVersion:   plan.LatestVersion,
+		ExecutablePath:  plan.ExecutablePath,
+		BinaryAssetName: plan.BinaryAsset.Name,
+		ChecksumsName:   plan.ChecksumsAsset.Name,
+		DownloadURL:     plan.BinaryAsset.BrowserDownloadURL,
+	}
+}
+
+func renderUpdateResultOutput(plan *updatePlan, opts updateResultOptions) string {
+	if plan == nil {
+		plan = &updatePlan{}
+	}
+
+	var b strings.Builder
+	writeLine := func(format string, args ...any) {
+		_, _ = fmt.Fprintf(&b, format+"\n", args...)
+	}
+
+	if opts.Check {
+		if opts.Updated {
+			writeLine("update available: %s -> %s", plan.CurrentVersion, plan.LatestVersion)
 		} else {
-			fmt.Printf("up to date: %s\n", plan.CurrentVersion)
+			writeLine("up to date: %s", plan.CurrentVersion)
 		}
-		return
+		return b.String()
 	}
 
-	if *dryRun {
-		fmt.Printf("current: %s\nlatest: %s\n", plan.CurrentVersion, plan.LatestVersion)
-		fmt.Printf("exe: %s\n", plan.ExecutablePath)
-		fmt.Printf("asset: %s\nchecksums: %s\n", plan.BinaryAsset.Name, plan.ChecksumsAsset.Name)
-		fmt.Printf("download: %s\n", plan.BinaryAsset.BrowserDownloadURL)
-		return
+	if opts.DryRun {
+		writeLine("current: %s", plan.CurrentVersion)
+		writeLine("latest: %s", plan.LatestVersion)
+		writeLine("exe: %s", plan.ExecutablePath)
+		writeLine("asset: %s", plan.BinaryAssetName)
+		writeLine("checksums: %s", plan.ChecksumsName)
+		writeLine("download: %s", plan.DownloadURL)
+		return b.String()
 	}
 
-	if needsOrUpdated {
-		if runtime.GOOS == "windows" {
-			fmt.Printf("update scheduled: %s -> %s\n", plan.CurrentVersion, plan.LatestVersion)
-			fmt.Printf("note: this process will exit so the updater can replace %s\n", plan.ExecutablePath)
-			return
+	if opts.Updated {
+		if opts.GOOS == "windows" {
+			writeLine("update scheduled: %s -> %s", plan.CurrentVersion, plan.LatestVersion)
+			writeLine("note: this process will exit so the updater can replace %s", plan.ExecutablePath)
+		} else {
+			writeLine("updated: %s -> %s", plan.CurrentVersion, plan.LatestVersion)
 		}
-		fmt.Printf("updated: %s -> %s\n", plan.CurrentVersion, plan.LatestVersion)
-		return
+		writeLine("next: if Clipal runs as a background service, restart it to load the new binary: clipal restart")
+		writeLine("      canonical form: clipal service restart")
+		return b.String()
 	}
-	fmt.Printf("up to date: %s\n", plan.CurrentVersion)
+
+	writeLine("up to date: %s", plan.CurrentVersion)
+	return b.String()
 }
 
 func runApplyUpdate(args []string) {

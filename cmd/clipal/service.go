@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +19,9 @@ import (
 func runService(args []string) {
 	fs := flag.NewFlagSet("service", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		printServiceUsage(os.Stderr)
+	}
 
 	configDir := fs.String("config-dir", "", "Configuration directory (default: ~/.clipal)")
 	binaryPath := fs.String("bin", "", "Path to clipal binary (default: current executable)")
@@ -30,21 +35,30 @@ func runService(args []string) {
 	stdoutPath := fs.String("stdout", "", "macOS: launchd StandardOutPath (optional)")
 	stderrPath := fs.String("stderr", "", "macOS: launchd StandardErrorPath (optional)")
 
+	if len(args) == 0 || (len(args) == 1 && isHelpToken(args[0])) {
+		printServiceUsage(os.Stdout)
+		return
+	}
+
 	actionArg, flagArgs, err := splitServiceArgs(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "clipal service: %v\n", err)
-		printServiceUsage()
+		printServiceUsage(os.Stderr)
 		os.Exit(2)
 	}
 
 	if err := fs.Parse(flagArgs); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			printServiceUsage(os.Stdout)
+			return
+		}
 		os.Exit(2)
 	}
 
 	action, err := service.ParseAction(actionArg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "clipal service: %v\n", err)
-		printServiceUsage()
+		printServiceUsage(os.Stderr)
 		os.Exit(2)
 	}
 
@@ -123,15 +137,24 @@ func runService(args []string) {
 	}
 }
 
-func printServiceUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clipal service [flags] <install|uninstall|start|stop|restart|status>")
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "examples:")
-	fmt.Fprintln(os.Stderr, "  clipal service install --config-dir ~/.clipal")
-	fmt.Fprintln(os.Stderr, "  clipal service restart")
-	fmt.Fprintln(os.Stderr, "  clipal service status")
-	fmt.Fprintln(os.Stderr, "  clipal service status --raw")
-	fmt.Fprintln(os.Stderr, "  clipal service status --json")
+func printServiceUsage(w io.Writer) {
+	fmt.Fprintln(w, "usage: clipal service [flags] <install|uninstall|start|stop|restart|status>")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "examples:")
+	fmt.Fprintln(w, "  clipal service install --config-dir ~/.clipal")
+	fmt.Fprintln(w, "  clipal service restart")
+	fmt.Fprintln(w, "  clipal service status")
+	fmt.Fprintln(w, "  clipal service status --raw")
+	fmt.Fprintln(w, "  clipal service status --json")
+}
+
+func isHelpToken(s string) bool {
+	switch strings.TrimSpace(s) {
+	case "help", "-h", "--help":
+		return true
+	default:
+		return false
+	}
 }
 
 func printServiceStatus(st service.Status) {

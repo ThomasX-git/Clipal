@@ -235,6 +235,7 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 				return io.NopCloser(bytes.NewReader(bodyBytes)), nil
 			}
 
+			//nolint:gosec // Clipal is a user-configured reverse proxy and intentionally forwards to configured upstream base URLs.
 			resp, err := cp.httpClient.Do(proxyReq)
 			if err != nil {
 				if req.Context().Err() != nil {
@@ -561,6 +562,7 @@ func (cp *ClientProxy) forwardCountTokensSingleShot(w http.ResponseWriter, req *
 		return io.NopCloser(bytes.NewReader(bodyBytes)), nil
 	}
 
+	//nolint:gosec // Clipal is a user-configured reverse proxy and intentionally forwards to configured upstream base URLs.
 	resp, err := cp.httpClient.Do(proxyReq)
 	if err != nil {
 		if req.Context().Err() != nil {

@@ -177,6 +177,7 @@ func TestRunStatusHelperProcess(t *testing.T) {
 
 	run := func(t *testing.T, dir string) (string, int) {
 		t.Helper()
+		//nolint:gosec // Tests intentionally re-exec the current test binary as a helper process.
 		cmd := exec.Command(os.Args[0], "-test.run=TestRunStatusHelperProcess")
 		cmd.Env = append(os.Environ(),
 			"CLIPAL_STATUS_HELPER=1",

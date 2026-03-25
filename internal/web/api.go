@@ -1066,6 +1066,7 @@ func validateBaseURL(raw string) (string, error) {
 	return raw, nil
 }
 
+//nolint:gosec // path comes from Clipal-managed config store locations, not arbitrary user input.
 func atomicWriteFile(path string, data []byte, perm fs.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

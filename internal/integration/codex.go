@@ -151,17 +151,6 @@ func readTOMLMap(path string) (map[string]any, error) {
 	return out, nil
 }
 
-func writeTOMLMap(path string, body map[string]any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	data, err := marshalTOMLMap(body)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o600)
-}
-
 func marshalTOMLMap(body map[string]any) ([]byte, error) {
 	data, err := toml.Marshal(body)
 	if err != nil {

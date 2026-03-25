@@ -40,7 +40,7 @@ For new setups, point clients at `/clipal` first. The older aliases remain avail
 ## Quick Start
 
 1. Download the right binary from [Releases](https://github.com/lansespirit/Clipal/releases).
-   Current stable release: [`v0.10.0`](https://github.com/lansespirit/Clipal/releases/tag/v0.10.0)
+   Current stable release: [`v0.11.2`](https://github.com/lansespirit/Clipal/releases/tag/v0.11.2)
 2. Put it on your `PATH` and verify the version:
 
 ```bash
@@ -95,6 +95,7 @@ clipal status --json
 clipal service install
 clipal service status
 clipal service restart
+clipal restart   # shortcut for clipal service restart
 
 # Check for updates or update in place
 clipal update --check

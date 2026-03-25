@@ -188,17 +188,6 @@ func marshalJSONMap(body map[string]any) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
-func writeJSONMap(path string, body map[string]any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	data, err := marshalJSONMap(body)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o600)
-}
-
 func readJSONCMap(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
