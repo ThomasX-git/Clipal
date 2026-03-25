@@ -192,6 +192,15 @@ function app() {
             }
         },
 
+        get isDarkTheme() {
+            return this.theme === 'dark' ||
+                (this.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        },
+
+        get brandIconSrc() {
+            return this.isDarkTheme ? '/static/clipal-icon-dark.svg' : '/static/clipal-icon.svg';
+        },
+
         get themeIcon() {
             if (this.theme === 'system') return '💻';
             return this.theme === 'dark' ? '🌙' : '☀️';
@@ -731,6 +740,10 @@ function app() {
             return match ? match.label : clientType;
         },
 
+        providerToastClientLabel() {
+            return this.clientLabel(this.selectedClient);
+        },
+
         get hasEnabledProviders() {
             return (this.providers || []).some(p => !!p.enabled);
         },
@@ -800,13 +813,15 @@ function app() {
             this.loadProviders();
         },
 
-        async saveClientConfig() {
+        async saveClientConfig(successToast = null) {
             try {
                 await this.apiCall(`/api/client-config/${this.selectedClient}`, {
                     method: 'PUT',
                     body: JSON.stringify(this.clientConfig)
                 });
-                this.showAlert('success', 'Client configuration saved');
+                if (successToast && (successToast.title || successToast.message)) {
+                    this.showAlert('success', successToast.message || '', successToast.title || '');
+                }
                 await this.refreshStatus();
             } catch (error) {
                 console.error('Failed to save client config:', error);
@@ -852,7 +867,21 @@ function app() {
                     }
                 }
             }
-            await this.saveClientConfig();
+            const client = this.providerToastClientLabel();
+            const pinned = String(this.clientConfig.pinned_provider || '').trim();
+            if (m === 'auto') {
+                await this.saveClientConfig({
+                    title: `${client} switched to Auto`,
+                    message: 'Failover now follows enabled providers by priority.'
+                });
+                return;
+            }
+            await this.saveClientConfig({
+                title: `${client} switched to Manual`,
+                message: pinned
+                    ? `Pinned to ${pinned}. Requests stay on this provider until you switch back to Auto.`
+                    : 'Requests now stay on the pinned provider until you switch back to Auto.'
+            });
         },
 
         async pinProvider(name) {
@@ -867,7 +896,11 @@ function app() {
 
             this.clientConfig.mode = 'manual';
             this.clientConfig.pinned_provider = v;
-            await this.saveClientConfig();
+            const client = this.providerToastClientLabel();
+            await this.saveClientConfig({
+                title: `Pinned ${client} to ${v}`,
+                message: 'New requests will stay on this provider until you switch back to Auto.'
+            });
         },
 
         async toggleProvider(provider, event) {
@@ -884,7 +917,20 @@ function app() {
                     },
                     true // Background op for toggles to feel instant
                 );
-                this.showAlert('success', newEnabled ? 'Provider enabled' : 'Provider disabled');
+                const client = this.providerToastClientLabel();
+                if (newEnabled) {
+                    this.showAlert(
+                        'success',
+                        'It is available again for failover selection.',
+                        `Enabled ${provider.name} for ${client}`
+                    );
+                } else {
+                    this.showAlert(
+                        'success',
+                        'It has been removed from failover selection.',
+                        `Disabled ${provider.name} for ${client}`
+                    );
+                }
                 await this.refreshStatus();
             } catch (error) {
                 provider.enabled = oldEnabled;
@@ -919,7 +965,11 @@ function app() {
                             body: JSON.stringify(payload)
                         }
                     );
-                    this.showAlert('success', 'Provider updated successfully');
+                    this.showAlert(
+                        'success',
+                        `Changes are now active for ${this.providerToastClientLabel()}.`,
+                        `Updated provider ${payload.name}`
+                    );
                 } else {
                     // Add new provider
                     await this.apiCall(
@@ -929,7 +979,11 @@ function app() {
                             body: JSON.stringify(payload)
                         }
                     );
-                    this.showAlert('success', 'Provider added successfully');
+                    this.showAlert(
+                        'success',
+                        `The provider is now available for ${this.providerToastClientLabel()}.`,
+                        `Added provider ${payload.name}`
+                    );
                 }
 
                 this.closeModals();
@@ -963,7 +1017,11 @@ function app() {
                     `/api/providers/${this.selectedClient}/${encodeURIComponent(name)}`,
                     { method: 'DELETE' }
                 );
-                this.showAlert('success', 'Provider deleted successfully');
+                this.showAlert(
+                    'success',
+                    `It has been removed from ${this.providerToastClientLabel()}'s provider list.`,
+                    `Deleted provider ${name}`
+                );
                 await this.loadProviders();
                 await this.refreshStatus();
             } catch (error) {
