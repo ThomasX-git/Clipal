@@ -116,3 +116,10 @@ body {
         transform: translateY(0);
     }
 }
+
+@media (max-width: 640px) {
+    .container {
+        margin: 20px auto;
+        padding: 0 16px;
+    }
+}

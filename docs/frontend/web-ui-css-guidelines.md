@@ -118,10 +118,24 @@ Common modifiers:
 ## File Ownership
 
 - `tokens.css`: variables only
-- `base.css`: reset, base typography, utilities, keyframes
-- `primitives.css`: pill, badge, chip, primitive modifiers
-- `components.css`: temporary compatibility layer until legacy selectors are fully migrated
-- `pages.css`: page-scoped blocks
+- `base.css`: reset, base typography, utilities, keyframes, base responsive layout
+- `primitives.css`: reusable visual controls and low-level UI building blocks
+  Examples:
+  `pill`, `badge`, `chip`, `card`, `kv-*`, `btn-*`, `form-*`, `checkbox`, `switch`, `tooltip`, `action-btn-*`
+- `components.css`: cross-page composite UI that is intentionally shared
+  Examples:
+  `header`, `tabs`, `client-switcher`, `modal`, `loading-overlay`
+- `pages.css`: tab-specific blocks and page-owned layout
+  Examples:
+  `provider-card-*`, `status-card-*`, `integration-card-*`, `settings-*`, `service-action-*`
+
+## Naming Guidance
+
+- if a selector styles a reusable visual control, it belongs in `primitives.css`
+- if a selector styles a shared multi-element app component, it belongs in `components.css`
+- if a selector exists only because one tab owns that block, it belongs in `pages.css`
+- avoid creating parallel names for the same primitive behavior
+  Prefer one shared primitive such as `action-btn--primary` over pairs like `integration-action-primary` and `service-action-primary`
 
 ## Review Checklist
 
@@ -144,11 +158,4 @@ Do not:
 
 ## Migration Note
 
-`index.html` now loads the layered stylesheets directly, and `components.css` no longer imports the legacy `styles.css`.
-
-New work should prefer:
-
-- page-scoped block selectors in `pages.css`
-- primitive modifiers in `primitives.css`
-
-and should avoid adding new selectors to legacy `styles.css` unless there is a deliberate temporary compatibility reason.
+`index.html` now loads the layered stylesheets directly. `styles.css` is legacy-only and should not receive new selectors unless there is a deliberate short-term compatibility need.

@@ -1,7 +1,10 @@
 /*
- * Task 1 started the page stylesheet layer.
- * Task 3 moves System Status onto a dedicated status-card block.
+ * Page-scoped blocks live here.
+ * This file owns tab-specific layout and section styling for Providers,
+ * CLI Takeover, Global Settings, Services, and System Status.
  */
+
+/* Shared page block roots */
 
 .provider-card,
 .status-card,
@@ -15,6 +18,8 @@
 .status-card__title {
     min-width: 0;
 }
+
+/* System Status */
 
 .status-card__header {
     display: flex;
@@ -112,6 +117,8 @@
     min-width: 0;
 }
 
+/* Providers */
+
 .provider-card__header {
     display: flex;
     justify-content: space-between;
@@ -186,6 +193,153 @@
     white-space: nowrap;
 }
 
+/* CLI Takeover */
+
+.integration-card {
+    gap: 18px;
+}
+
+.integration-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 0;
+}
+
+.integration-card-heading {
+    line-height: 1.1;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.integration-card-status {
+    margin-top: 0;
+    flex: 0 0 auto;
+    align-self: flex-start;
+}
+
+.integration-card-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.integration-card-actions-right {
+    justify-content: flex-end;
+}
+
+.integration-card-summary {
+    cursor: pointer;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-secondary);
+    font-weight: var(--font-medium);
+    transition: var(--transition);
+}
+
+.integration-card-summary-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding-top: 14px;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+    gap: 12px;
+}
+
+.integration-card-summary-label {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.integration-card-summary::-webkit-details-marker {
+    display: none;
+}
+
+.integration-card-summary::after {
+    content: "+";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: var(--bg-surface);
+    color: var(--text-tertiary);
+    font-size: 14px;
+    line-height: 1;
+    transition: var(--transition);
+}
+
+.integration-preview-details[open] .integration-card-summary {
+    color: var(--text-primary);
+}
+
+.integration-preview-details[open] .integration-card-summary::after {
+    transform: rotate(45deg);
+    color: var(--primary);
+}
+
+.integration-card-summary:hover {
+    color: var(--text-primary);
+}
+
+.integration-card-summary-meta {
+    color: var(--text-tertiary);
+    font-size: 0.8125rem;
+    font-weight: var(--font-regular);
+    white-space: nowrap;
+}
+
+.integration-warning {
+    margin-top: -4px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: rgba(245, 158, 11, 0.12);
+    color: #92400e;
+    border: 1px solid rgba(245, 158, 11, 0.24);
+    font-size: var(--text-sm);
+}
+
+.dark .integration-warning {
+    color: #fcd34d;
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.integration-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+    gap: 14px;
+}
+
+.integration-preview-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+}
+
+.integration-preview-code {
+    margin-top: 10px;
+    min-height: 80px;
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.6;
+    color: var(--text-primary);
+}
+
+/* Shared page headers */
+
 .takeover-page__header,
 .service-panel__header {
     display: flex;
@@ -212,6 +366,146 @@
     justify-content: flex-end;
 }
 
+/* Services */
+
+.service-action-layout {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.service-action-main-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.service-action-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    flex: 1 1 520px;
+    min-width: 0;
+}
+
+.service-action-secondary-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.service-action-aside {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+.service-force-toggle {
+    min-height: 36px;
+    padding: 0 2px;
+}
+
+/* Global Settings */
+
+.settings-page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+    padding: 0 2px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-page-copy {
+    margin-top: 4px;
+    color: var(--text-tertiary);
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    max-width: 680px;
+}
+
+.settings-toolbar-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-top: 6px;
+}
+
+.settings-compact-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+    gap: 16px;
+}
+
+.settings-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 22px 22px 20px;
+    box-shadow: var(--shadow-sm);
+}
+
+.settings-panel-header {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-panel-header h3 {
+    font-size: var(--text-base);
+    font-weight: var(--font-bold);
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.settings-panel-copy {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+}
+
+.settings-panel-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 14px;
+}
+
+.settings-panel-grid .form-group {
+    margin-bottom: 0;
+}
+
+.settings-flag-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.settings-flag-card {
+    min-height: 42px;
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+}
+
+.settings-form-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+}
+
 @media (max-width: 700px) {
     .status-card__group {
         grid-template-columns: 1fr;
@@ -229,5 +523,76 @@
     .takeover-page__metrics,
     .service-panel__metrics {
         justify-content: flex-start;
+    }
+
+    .integration-card-header {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .integration-card-status {
+        margin-top: 0;
+        align-self: flex-start;
+    }
+
+    .integration-card-actions {
+        gap: 8px;
+    }
+
+    .integration-card-actions-right {
+        justify-content: flex-start;
+    }
+
+    .integration-card-summary {
+        gap: 8px;
+    }
+
+    .integration-card-summary-row {
+        padding-top: 12px;
+        flex-wrap: wrap;
+    }
+
+    .integration-card-summary-label {
+        flex-basis: 100%;
+    }
+
+    .integration-card-summary-meta {
+        font-size: 0.75rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .settings-page-header,
+    .settings-form-actions {
+        align-items: stretch;
+    }
+
+    .settings-toolbar-actions {
+        justify-content: flex-start;
+        padding-top: 4px;
+    }
+
+    .settings-panel {
+        padding: 18px;
+    }
+
+    .settings-panel-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .service-action-main-row {
+        align-items: stretch;
+    }
+
+    .service-action-group,
+    .service-action-aside {
+        flex: 1 1 100%;
+    }
+
+    .service-action-aside,
+    .service-action-secondary-row {
+        justify-content: flex-start;
+        margin-left: 0;
     }
 }

@@ -351,11 +351,11 @@ func TestIntegrations_UIAndRouteAreRegistered(t *testing.T) {
 		"integration-card-header",
 		"integration-card-heading",
 		"integration-card-actions-right",
-		"integration-action-primary",
+		"action-btn--primary",
 		"integration-card-summary",
 		"integration-card-summary-row",
-		"integration-action-shell",
-		"integration-action-tooltip",
+		"action-shell",
+		"action-tooltip",
 	} {
 		if !strings.Contains(index, want) {
 			t.Fatalf("index missing %q: %s", want, index)

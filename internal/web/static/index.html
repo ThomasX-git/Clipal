@@ -444,12 +444,12 @@
                         </div>
 
                         <div class="integration-card-actions integration-card-actions-right">
-                            <span class="integration-action-shell"
-                                :class="integrationActionDisabledReason(integration, 'apply') ? 'tooltip integration-action-tooltip is-disabled' : ''"
+                            <span class="action-shell"
+                                :class="integrationActionDisabledReason(integration, 'apply') ? 'tooltip action-tooltip is-disabled' : ''"
                                 :tabindex="integrationActionDisabledReason(integration, 'apply') ? 0 : null"
                                 :aria-label="integrationActionDisabledReason(integration, 'apply') || null">
-                                <button type="button" class="integration-action-btn integration-action-primary"
-                                    :class="integrationActionIsBusy(integration, 'apply') ? 'integration-action-btn-busy' : ''"
+                                <button type="button" class="action-btn action-btn--primary"
+                                    :class="integrationActionIsBusy(integration, 'apply') ? 'action-btn--busy' : ''"
                                     :disabled="integrationBusyProduct === integration.product || integration.state === 'configured'"
                                     @click="runIntegrationAction(integration.product, 'apply')"
                                     x-text="integrationActionIsBusy(integration, 'apply') ? 'Working...' : integrationApplyLabel()">
@@ -457,12 +457,12 @@
                                 <span x-show="integrationActionDisabledReason(integration, 'apply')" class="tooltip-content"
                                     x-text="integrationActionDisabledReason(integration, 'apply')"></span>
                             </span>
-                            <span class="integration-action-shell"
-                                :class="integrationActionDisabledReason(integration, 'rollback') ? 'tooltip integration-action-tooltip is-disabled' : ''"
+                            <span class="action-shell"
+                                :class="integrationActionDisabledReason(integration, 'rollback') ? 'tooltip action-tooltip is-disabled' : ''"
                                 :tabindex="integrationActionDisabledReason(integration, 'rollback') ? 0 : null"
                                 :aria-label="integrationActionDisabledReason(integration, 'rollback') || null">
-                                <button type="button" class="integration-action-btn integration-action-secondary"
-                                    :class="integrationActionIsBusy(integration, 'rollback') ? 'integration-action-btn-busy' : ''"
+                                <button type="button" class="action-btn action-btn--secondary"
+                                    :class="integrationActionIsBusy(integration, 'rollback') ? 'action-btn--busy' : ''"
                                     :disabled="integrationBusyProduct === integration.product || integration.state !== 'configured' || !integration.backup_available"
                                     @click="runIntegrationAction(integration.product, 'rollback')"
                                     x-text="integrationActionIsBusy(integration, 'rollback') ? 'Working...' : integrationRollbackLabel()">
@@ -575,12 +575,12 @@
                     <div class="service-action-layout" x-show="serviceStatus.supported && serviceStatus.installed">
                         <div class="service-action-main-row">
                             <div class="service-action-group">
-                                <span class="service-action-shell"
-                                    :class="serviceActionDisabledReason('start') ? 'tooltip service-action-tooltip is-disabled' : ''"
+                                <span class="action-shell"
+                                    :class="serviceActionDisabledReason('start') ? 'tooltip action-tooltip is-disabled' : ''"
                                     :tabindex="serviceActionDisabledReason('start') ? 0 : null"
                                     :aria-label="serviceActionDisabledReason('start') || null">
-                                    <button type="button" class="service-action-btn"
-                                        :class="[!serviceStatus.running ? 'service-action-primary' : 'service-action-secondary', serviceActionIsBusy('start') ? 'service-action-btn-busy' : '']"
+                                    <button type="button" class="action-btn"
+                                        :class="[!serviceStatus.running ? 'action-btn--primary' : 'action-btn--secondary', serviceActionIsBusy('start') ? 'action-btn--busy' : '']"
                                         :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('start')"
                                         @click="serviceAction('start')"
                                         x-text="serviceActionIsBusy('start') ? 'Working...' : 'Start'">
@@ -588,12 +588,12 @@
                                     <span x-show="serviceActionDisabledReason('start')" class="tooltip-content"
                                         x-text="serviceActionDisabledReason('start')"></span>
                                 </span>
-                                <span class="service-action-shell"
-                                    :class="serviceActionDisabledReason('restart') ? 'tooltip service-action-tooltip is-disabled' : ''"
+                                <span class="action-shell"
+                                    :class="serviceActionDisabledReason('restart') ? 'tooltip action-tooltip is-disabled' : ''"
                                     :tabindex="serviceActionDisabledReason('restart') ? 0 : null"
                                     :aria-label="serviceActionDisabledReason('restart') || null">
-                                    <button type="button" class="service-action-btn"
-                                        :class="[serviceStatus.running ? 'service-action-primary' : 'service-action-secondary', serviceActionIsBusy('restart') ? 'service-action-btn-busy' : '']"
+                                    <button type="button" class="action-btn"
+                                        :class="[serviceStatus.running ? 'action-btn--primary' : 'action-btn--secondary', serviceActionIsBusy('restart') ? 'action-btn--busy' : '']"
                                         :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('restart')"
                                         @click="serviceAction('restart')"
                                         x-text="serviceActionIsBusy('restart') ? 'Working...' : 'Restart'">
@@ -601,12 +601,12 @@
                                     <span x-show="serviceActionDisabledReason('restart')" class="tooltip-content"
                                         x-text="serviceActionDisabledReason('restart')"></span>
                                 </span>
-                                <span class="service-action-shell"
-                                    :class="serviceActionDisabledReason('stop') ? 'tooltip service-action-tooltip is-disabled' : ''"
+                                <span class="action-shell"
+                                    :class="serviceActionDisabledReason('stop') ? 'tooltip action-tooltip is-disabled' : ''"
                                     :tabindex="serviceActionDisabledReason('stop') ? 0 : null"
                                     :aria-label="serviceActionDisabledReason('stop') || null">
-                                    <button type="button" class="service-action-btn service-action-secondary"
-                                        :class="serviceActionIsBusy('stop') ? 'service-action-btn-busy' : ''"
+                                    <button type="button" class="action-btn action-btn--secondary"
+                                        :class="serviceActionIsBusy('stop') ? 'action-btn--busy' : ''"
                                         :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('stop')"
                                         @click="serviceAction('stop')"
                                         x-text="serviceActionIsBusy('stop') ? 'Working...' : 'Stop'">
@@ -614,12 +614,12 @@
                                     <span x-show="serviceActionDisabledReason('stop')" class="tooltip-content"
                                         x-text="serviceActionDisabledReason('stop')"></span>
                                 </span>
-                                <span class="service-action-shell"
-                                    :class="serviceActionDisabledReason('uninstall') ? 'tooltip service-action-tooltip is-disabled' : ''"
+                                <span class="action-shell"
+                                    :class="serviceActionDisabledReason('uninstall') ? 'tooltip action-tooltip is-disabled' : ''"
                                     :tabindex="serviceActionDisabledReason('uninstall') ? 0 : null"
                                     :aria-label="serviceActionDisabledReason('uninstall') || null">
-                                    <button type="button" class="service-action-btn service-action-danger"
-                                        :class="serviceActionIsBusy('uninstall') ? 'service-action-btn-busy' : ''"
+                                    <button type="button" class="action-btn action-btn--danger"
+                                        :class="serviceActionIsBusy('uninstall') ? 'action-btn--busy' : ''"
                                         :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('uninstall')"
                                         @click="serviceAction('uninstall')"
                                         x-text="serviceActionIsBusy('uninstall') ? 'Working...' : 'Uninstall'">
@@ -627,7 +627,7 @@
                                     <span x-show="serviceActionDisabledReason('uninstall')" class="tooltip-content"
                                         x-text="serviceActionDisabledReason('uninstall')"></span>
                                 </span>
-                                <button type="button" class="service-action-btn service-action-secondary" @click="loadServiceStatus()">
+                                <button type="button" class="action-btn action-btn--secondary" @click="loadServiceStatus()">
                                     Check
                                 </button>
                             </div>
@@ -639,12 +639,12 @@
                                 <span class="checkbox-text">Force</span>
                                 </label>
 
-                                <span class="service-action-shell"
-                                    :class="serviceActionDisabledReason('install') ? 'tooltip service-action-tooltip is-disabled' : ''"
+                                <span class="action-shell"
+                                    :class="serviceActionDisabledReason('install') ? 'tooltip action-tooltip is-disabled' : ''"
                                     :tabindex="serviceActionDisabledReason('install') ? 0 : null"
                                     :aria-label="serviceActionDisabledReason('install') || null">
-                                    <button type="button" class="service-action-btn service-action-secondary"
-                                        :class="serviceActionIsBusy('install') ? 'service-action-btn-busy' : ''"
+                                    <button type="button" class="action-btn action-btn--secondary"
+                                        :class="serviceActionIsBusy('install') ? 'action-btn--busy' : ''"
                                         :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('install')"
                                         @click="serviceAction('install')"
                                         x-text="serviceActionIsBusy('install') ? 'Working...' : 'Reinstall'">
