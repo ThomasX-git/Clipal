@@ -1,7 +1,7 @@
 # Clipal
 
 <div align="center">
-  <img src="assets/clipal-Hancock.jpeg" alt="Clipal" width="100%">
+  <img src="assets/Clipal-Hancock.jpeg" alt="Clipal" width="100%">
   <p><b>Your Ultimate Local LLM API Gateway & Manager</b></p>
   <p>
     <a href="README.md">English</a> | <a href="README.zh-CN.md">中文</a>
@@ -103,7 +103,7 @@ Dive deeper into what Clipal can do:
 - Your upstream API keys are stored only on your machine and transparently injected into requests.
 
 <div align="center">
-  <img src="assets/clipal-luffy3.jpeg" alt="Clipal" width="100%">
+  <img src="assets/Clipal-luffy2.jpeg" alt="Clipal" width="100%">
 </div>
 
 ## 📄 License

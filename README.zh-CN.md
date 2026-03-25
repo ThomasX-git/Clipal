@@ -1,7 +1,7 @@
 # Clipal
 
 <div align="center">
-  <img src="assets/clipal-Hancock5.jpeg" alt="Clipal" width="100%">
+  <img src="assets/Clipal-Hancock5.jpeg" alt="Clipal" width="100%">
   <p><b>你的终极本地 LLM API 网关与管理器</b></p>
   <p>
     <a href="README.md">English</a> | <a href="README.zh-CN.md">中文</a>
@@ -103,7 +103,7 @@ clipal service start
 - **真 Key 替换**：你在 Clipal 中配置的上游 API Key 只存在本地，Clipal 会在代理时自动覆盖并注入到真正的请求中，你可以在客户端放心地填入任何占位符。
 
 <div align="center">
-  <img src="assets/clipal-luffy2.jpeg" alt="Clipal" width="100%">
+  <img src="assets/Clipal-luffy2.jpeg" alt="Clipal" width="100%">
 </div>
 
 ## 📄 License
