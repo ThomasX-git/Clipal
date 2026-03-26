@@ -16,7 +16,7 @@
 
 扫描下方二维码加入 Clipal 微信交流群，和其他用户一起讨论使用方法、配置问题与产品反馈。
 
-![Clipal 微信交流群二维码](assets/wechat-group.png)
+<img src="assets/wechat-group.png" alt="Clipal 微信交流群二维码" width="320">
 
 ## ✨ 为什么选择 Clipal？（核心优势）
 
