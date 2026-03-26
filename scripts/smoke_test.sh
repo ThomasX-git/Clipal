@@ -142,7 +142,8 @@ providers:
 YAML
 
 export UPSTREAM_PORT="$upstream_port"
-go run "$tmpdir/upstream.go" >"$tmpdir/upstream.log" 2>&1 &
+go build -o "$tmpdir/upstream" "$tmpdir/upstream.go"
+"$tmpdir/upstream" >"$tmpdir/upstream.log" 2>&1 &
 upstream_pid="$!"
 if ! wait_http_ok "http://127.0.0.1:$upstream_port/"; then
   echo "---- upstream.log ----" >&2

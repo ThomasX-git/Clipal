@@ -108,3 +108,6 @@ clipal service start
 
 ## 📄 License
 MIT
+
+## 🙏 致谢
+感谢 [linux.do](https://linux.do/) 社区提供的支持。

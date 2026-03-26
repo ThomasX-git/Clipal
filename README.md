@@ -108,3 +108,6 @@ Dive deeper into what Clipal can do:
 
 ## 📄 License
 MIT
+
+## 🙏 Thanks
+Thanks to the [linux.do](https://linux.do/) community for its support.
