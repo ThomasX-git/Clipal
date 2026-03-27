@@ -70,7 +70,7 @@ const (
 )
 
 func detectClipalRequestContext(path string) (RequestContext, bool) {
-	path = normalizeUpstreamPath(path)
+	path = canonicalizeClipalPath(path)
 
 	switch capability := detectClaudeCapability(path); capability {
 	case "":
@@ -185,6 +185,87 @@ func normalizeUpstreamPath(path string) string {
 	return path
 }
 
+func canonicalizeClipalPath(path string) string {
+	path = normalizeUpstreamPath(path)
+
+	if isVersionedClipalPath(path) {
+		return path
+	}
+
+	if canonical, ok := canonicalizeBareClaudePath(path); ok {
+		return canonical
+	}
+	if canonical, ok := canonicalizeBareGeminiPath(path); ok {
+		return canonical
+	}
+	if canonical, ok := canonicalizeBareOpenAIPath(path); ok {
+		return canonical
+	}
+
+	return path
+}
+
+func isVersionedClipalPath(path string) bool {
+	return pathMatchesPrefix(path, "/v1") ||
+		pathMatchesPrefix(path, "/v1beta") ||
+		pathMatchesPrefix(path, "/upload/v1") ||
+		pathMatchesPrefix(path, "/upload/v1beta")
+}
+
+func canonicalizeBareClaudePath(path string) (string, bool) {
+	switch {
+	case matchesExactPath(path, "/messages"):
+		return "/v1/messages", true
+	case path == "/messages/count_tokens" || path == "/messages/count_tokens/":
+		return "/v1" + path, true
+	default:
+		return "", false
+	}
+}
+
+func canonicalizeBareGeminiPath(path string) (string, bool) {
+	switch {
+	case isGeminiBareMethodPath(path, ":generateContent"),
+		isGeminiBareMethodPath(path, ":streamGenerateContent"),
+		isGeminiBareMethodPath(path, ":countTokens"),
+		isGeminiBareMethodPath(path, ":embedContent"),
+		isGeminiBareMethodPath(path, ":batchEmbedContents"),
+		pathMatchesPrefix(path, "/cachedContents"),
+		pathMatchesPrefix(path, "/tunedModels"):
+		return "/v1beta" + path, true
+	default:
+		return "", false
+	}
+}
+
+func isGeminiBareMethodPath(path string, method string) bool {
+	return isGeminiMethodPathWithPrefix(path, "/models/", method)
+}
+
+func canonicalizeBareOpenAIPath(path string) (string, bool) {
+	switch {
+	case matchesExactPath(path, "/chat/completions"),
+		matchesExactPath(path, "/completions"),
+		matchesExactPath(path, "/embeddings"),
+		matchesExactPath(path, "/moderations"),
+		pathMatchesPrefix(path, "/responses"),
+		pathMatchesPrefix(path, "/audio"),
+		pathMatchesPrefix(path, "/images"),
+		pathMatchesPrefix(path, "/files"),
+		pathMatchesPrefix(path, "/uploads"),
+		pathMatchesPrefix(path, "/models"),
+		pathMatchesPrefix(path, "/fine_tuning"),
+		pathMatchesPrefix(path, "/batches"),
+		pathMatchesPrefix(path, "/vector_stores"),
+		pathMatchesPrefix(path, "/assistants"),
+		pathMatchesPrefix(path, "/threads"),
+		pathMatchesPrefix(path, "/realtime"):
+		return "/v1" + path, true
+	default:
+		return "", false
+	}
+}
+
 func matchesExactPath(path string, want string) bool {
 	return path == want || path == want+"/"
 }
@@ -213,7 +294,7 @@ func detectOpenAICapability(path string) RequestCapability {
 		return CapabilityOpenAIChatCompletions
 	case matchesExactPath(path, "/v1/completions"):
 		return CapabilityOpenAICompletions
-	case matchesExactPath(path, "/v1/responses"):
+	case pathMatchesPrefix(path, "/v1/responses"):
 		return CapabilityOpenAIResponses
 	case matchesExactPath(path, "/v1/embeddings"):
 		return CapabilityOpenAIEmbeddings

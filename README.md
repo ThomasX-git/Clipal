@@ -59,7 +59,7 @@ It natively supports the request flavors of:
 ## ⚡ Quick Start
 
 ### 1. Install Clipal
-Download the standalone binary for your OS from [Releases](https://github.com/lansespirit/Clipal/releases) (Current stable release: [`v0.11.2`](https://github.com/lansespirit/Clipal/releases/tag/v0.11.2)) and put it on your `PATH`.
+Download the standalone binary for your OS from [Releases](https://github.com/lansespirit/Clipal/releases) (Current stable release: [`v0.11.3`](https://github.com/lansespirit/Clipal/releases/tag/v0.11.3)) and put it on your `PATH`.
 ```bash
 chmod +x clipal*
 ./clipal* --version

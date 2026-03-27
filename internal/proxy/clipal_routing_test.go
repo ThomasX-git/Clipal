@@ -61,6 +61,27 @@ func installMarkerTransport(cp *ClientProxy, host string, body string, calls *in
 	})
 }
 
+func installPathAssertingTransport(cp *ClientProxy, host string, wantPath string, body string, calls *int32) {
+	cp.httpClient.Transport = roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != host {
+			return nil, io.ErrUnexpectedEOF
+		}
+		if r.URL.Path != wantPath {
+			return &http.Response{
+				StatusCode: http.StatusBadGateway,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader([]byte("unexpected path: " + r.URL.Path))),
+			}, nil
+		}
+		atomic.AddInt32(calls, 1)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader([]byte(body))),
+		}, nil
+	})
+}
+
 func TestClipalClaudeRequestUsesClaudePool(t *testing.T) {
 	t.Parallel()
 
@@ -120,6 +141,154 @@ func TestClipalResponsesRequestUsesCodexPool(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&geminiCalls); got != 0 {
 		t.Fatalf("gemini calls: got %d want 0", got)
+	}
+}
+
+func TestClipalBareResponsesPathCanonicalizesToV1(t *testing.T) {
+	t.Parallel()
+
+	router := newUnifiedIngressTestRouter()
+
+	var codexCalls int32
+	installPathAssertingTransport(router.proxies[ClientOpenAI], "codex", "/v1/responses", "codex-ok", &codexCalls)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://proxy/clipal/responses", bytes.NewReader([]byte(`{"x":1}`)))
+	router.handleRequest(rr, req)
+
+	if rr.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d body=%s", rr.Result().StatusCode, http.StatusOK, rr.Body.String())
+	}
+	if got := rr.Body.String(); got != "codex-ok" {
+		t.Fatalf("body: got %q want %q", got, "codex-ok")
+	}
+	if got := atomic.LoadInt32(&codexCalls); got != 1 {
+		t.Fatalf("codex calls: got %d want 1", got)
+	}
+}
+
+func TestClipalBareResponsesResourcePathCanonicalizesToV1(t *testing.T) {
+	t.Parallel()
+
+	router := newUnifiedIngressTestRouter()
+
+	var codexCalls int32
+	installPathAssertingTransport(router.proxies[ClientOpenAI], "codex", "/v1/responses/resp_123/cancel", "codex-ok", &codexCalls)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://proxy/clipal/responses/resp_123/cancel", bytes.NewReader([]byte(`{"x":1}`)))
+	router.handleRequest(rr, req)
+
+	if rr.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d body=%s", rr.Result().StatusCode, http.StatusOK, rr.Body.String())
+	}
+	if got := rr.Body.String(); got != "codex-ok" {
+		t.Fatalf("body: got %q want %q", got, "codex-ok")
+	}
+	if got := atomic.LoadInt32(&codexCalls); got != 1 {
+		t.Fatalf("codex calls: got %d want 1", got)
+	}
+}
+
+func TestClipalBareClaudeMessagesPathCanonicalizesToV1(t *testing.T) {
+	t.Parallel()
+
+	router := newUnifiedIngressTestRouter()
+
+	var claudeCalls int32
+	installPathAssertingTransport(router.proxies[ClientClaude], "claude", "/v1/messages", "claude-ok", &claudeCalls)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://proxy/clipal/messages", bytes.NewReader([]byte(`{"x":1}`)))
+	router.handleRequest(rr, req)
+
+	if rr.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d body=%s", rr.Result().StatusCode, http.StatusOK, rr.Body.String())
+	}
+	if got := rr.Body.String(); got != "claude-ok" {
+		t.Fatalf("body: got %q want %q", got, "claude-ok")
+	}
+	if got := atomic.LoadInt32(&claudeCalls); got != 1 {
+		t.Fatalf("claude calls: got %d want 1", got)
+	}
+}
+
+func TestClipalBareGeminiMethodPathCanonicalizesToV1Beta(t *testing.T) {
+	t.Parallel()
+
+	router := newUnifiedIngressTestRouter()
+
+	var geminiCalls int32
+	installPathAssertingTransport(
+		router.proxies[ClientGemini],
+		"gemini",
+		"/v1beta/models/gemini-2.5-pro:generateContent",
+		"gemini-ok",
+		&geminiCalls,
+	)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"http://proxy/clipal/models/gemini-2.5-pro:generateContent",
+		bytes.NewReader([]byte(`{"contents":[]}`)),
+	)
+	router.handleRequest(rr, req)
+
+	if rr.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d body=%s", rr.Result().StatusCode, http.StatusOK, rr.Body.String())
+	}
+	if got := rr.Body.String(); got != "gemini-ok" {
+		t.Fatalf("body: got %q want %q", got, "gemini-ok")
+	}
+	if got := atomic.LoadInt32(&geminiCalls); got != 1 {
+		t.Fatalf("gemini calls: got %d want 1", got)
+	}
+}
+
+func TestClipalBareModelsPathDefaultsToOpenAICompatibility(t *testing.T) {
+	t.Parallel()
+
+	router := newUnifiedIngressTestRouter()
+
+	var codexCalls int32
+	installPathAssertingTransport(router.proxies[ClientOpenAI], "codex", "/v1/models", "codex-ok", &codexCalls)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://proxy/clipal/models", nil)
+	router.handleRequest(rr, req)
+
+	if rr.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d body=%s", rr.Result().StatusCode, http.StatusOK, rr.Body.String())
+	}
+	if got := rr.Body.String(); got != "codex-ok" {
+		t.Fatalf("body: got %q want %q", got, "codex-ok")
+	}
+	if got := atomic.LoadInt32(&codexCalls); got != 1 {
+		t.Fatalf("codex calls: got %d want 1", got)
+	}
+}
+
+func TestClipalBareGeminiModelMetadataPathUsesGeminiPool(t *testing.T) {
+	t.Parallel()
+
+	router := newUnifiedIngressTestRouter()
+
+	var geminiCalls int32
+	installPathAssertingTransport(router.proxies[ClientGemini], "gemini", "/v1/models/gemini-2.5-pro", "gemini-ok", &geminiCalls)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://proxy/clipal/models/gemini-2.5-pro", nil)
+	router.handleRequest(rr, req)
+
+	if rr.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want %d body=%s", rr.Result().StatusCode, http.StatusOK, rr.Body.String())
+	}
+	if got := rr.Body.String(); got != "gemini-ok" {
+		t.Fatalf("body: got %q want %q", got, "gemini-ok")
+	}
+	if got := atomic.LoadInt32(&geminiCalls); got != 1 {
+		t.Fatalf("gemini calls: got %d want 1", got)
 	}
 }
 

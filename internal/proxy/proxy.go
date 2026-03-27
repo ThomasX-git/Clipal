@@ -874,6 +874,7 @@ func (r *Router) handleRequest(w http.ResponseWriter, req *http.Request) {
 
 	newPath := stripClientPrefix(path, stripPrefix)
 	if clipalPath {
+		newPath = canonicalizeClipalPath(newPath)
 		var ok bool
 		requestCtx, ok = detectClipalRequestContext(newPath)
 		if !ok {
