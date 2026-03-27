@@ -18,7 +18,7 @@ Scan the QR code below to join the Clipal WeChat group and discuss usage, setup,
 
 <img src="assets/wechat-group.png" alt="Clipal WeChat Group QR Code" width="320">
 
-## ✨ Why Clipal? (Superpowers)
+## ✨ Why Clipal?
 
 ### 🚀 **One-Click CLI Takeover**
 No more hunting for hidden config files. With a single click in the Web UI, Clipal can automatically take over the configurations for **Claude Code, Codex CLI, OpenCode, Gemini CLI, Continue, Aider**, and **Goose**. 
@@ -57,6 +57,21 @@ It natively supports the request flavors of:
 ---
 
 ## ⚡ Quick Start
+
+### Let Your AI Install It
+
+If you use a terminal-capable AI such as Claude Code or Codex CLI, you can send it the prompt below:
+
+```text
+Please help me install and start Clipal. Project: https://github.com/lansespirit/Clipal
+
+Please detect my current OS and architecture, check the project's Releases and docs, and complete the download, installation, and startup for me. Then confirm that I can open the Web UI successfully. Use these official links when needed:
+- Releases: https://github.com/lansespirit/Clipal/releases
+- Getting Started: https://github.com/lansespirit/Clipal/blob/main/docs/en/getting-started.md
+- Web UI: https://github.com/lansespirit/Clipal/blob/main/docs/en/web-ui.md
+
+After that, guide me through using the Web UI to enable CLI takeover and add my first provider.
+```
 
 ### 1. Install Clipal
 Download the standalone binary for your OS from [Releases](https://github.com/lansespirit/Clipal/releases) (Current stable release: [`v0.11.3`](https://github.com/lansespirit/Clipal/releases/tag/v0.11.3)) and put it on your `PATH`.
