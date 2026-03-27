@@ -5,6 +5,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clipal Management</title>
+    <script>
+        (function () {
+            try {
+                var stored = localStorage.getItem('clipal.locale');
+                var locale = stored === 'zh-CN' ? 'zh-CN' : 'en';
+                document.documentElement.lang = locale;
+                document.title = locale === 'zh-CN' ? 'Clipal 管理界面' : 'Clipal Management';
+            } catch (error) {
+                document.documentElement.lang = 'en';
+                document.title = 'Clipal Management';
+            }
+        })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/static/clipal-icon.svg">
     <link rel="stylesheet" href="/static/styles/tokens.css">
     <link rel="stylesheet" href="/static/styles/base.css">
@@ -36,11 +49,17 @@
             </div>
             <div class="header-info">
                 <span class="pill pill--xs pill--neutral pill--mono" x-text="tf('header.uptime', { uptime: status.uptime })"></span>
-                <div class="segmented-group locale-switcher" role="group" :aria-label="t('locale.label')">
-                    <button type="button" class="segment-btn" :class="{'active': locale === 'en'}"
-                        @click="setLocale('en')">EN</button>
-                    <button type="button" class="segment-btn" :class="{'active': locale === 'zh-CN'}"
-                        @click="setLocale('zh-CN')">中文</button>
+                <div class="segmented-group locale-switcher" role="radiogroup" :aria-label="t('locale.label')">
+                    <button type="button" class="segment-btn" role="radio" lang="en" x-ref="localeEn"
+                        :class="{'active': locale === 'en'}" :aria-checked="locale === 'en'"
+                        :aria-label="t('locale.english')" @click="setLocale('en')"
+                        @keydown.left.prevent="moveLocale(-1)" @keydown.up.prevent="moveLocale(-1)"
+                        @keydown.right.prevent="moveLocale(1)" @keydown.down.prevent="moveLocale(1)">EN</button>
+                    <button type="button" class="segment-btn" role="radio" lang="zh-CN" x-ref="localeZh"
+                        :class="{'active': locale === 'zh-CN'}" :aria-checked="locale === 'zh-CN'"
+                        :aria-label="t('locale.chinese')" @click="setLocale('zh-CN')"
+                        @keydown.left.prevent="moveLocale(-1)" @keydown.up.prevent="moveLocale(-1)"
+                        @keydown.right.prevent="moveLocale(1)" @keydown.down.prevent="moveLocale(1)">中文</button>
                 </div>
                 <button @click="toggleTheme()" class="theme-toggle" :title="tf('theme.current', { theme: themeLabel })">
                     <span x-text="themeIcon"></span>
@@ -49,7 +68,7 @@
         </header>
 
         <!-- Navigation Tabs -->
-        <nav class="tabs" role="tablist" aria-label="Sections">
+        <nav class="tabs" role="tablist" :aria-label="t('nav.sectionsLabel')">
             <button id="tabbtn-providers" role="tab" :tabindex="activeTab === 'providers' ? 0 : -1"
                 :aria-selected="activeTab === 'providers'" aria-controls="tab-providers"
                 @click="activeTab = 'providers'" :class="{'active': activeTab === 'providers'}" class="tab"
@@ -103,7 +122,7 @@
             <!-- Client Switcher -->
             <div class="client-switcher-container">
                 <div class="client-switcher">
-                    <div class="segmented-group" role="tablist" aria-label="Client Type">
+                    <div class="segmented-group" role="tablist" :aria-label="t('providers.clientTypeLabel')">
                         <template x-for="client in clientOptions" :key="client.value">
                             <button type="button" @click="selectClient(client.value)"
                                 :class="{'active': selectedClient === client.value}" class="segment-btn"
@@ -406,30 +425,21 @@
                 <div class="card takeover-page__panel" style="grid-column: 1 / -1;">
                     <div class="takeover-page__header">
                         <div>
-                            <h3 class="provider-name">CLI Takeover</h3>
-                            <div class="takeover-page__copy">
-                                Let Clipal take over supported CLI clients by modifying their user-level config files.
-                            </div>
+                            <h3 class="provider-name" x-text="t('integrations.title')"></h3>
+                            <div class="takeover-page__copy" x-text="t('integrations.subtitle')"></div>
                         </div>
                         <div class="takeover-page__metrics">
                             <button type="button" class="pill pill--xs pill--neutral pill--mono pill-secondary"
-                                @click="loadIntegrations()">
-                                Refresh
-                            </button>
+                                @click="loadIntegrations()" x-text="t('integrations.refresh')"></button>
                         </div>
                     </div>
-                    <div class="form-hint">
-                        This only edits your user-level config file. Project-local or managed settings may still
-                        override the effective behavior.
-                    </div>
-                    <div class="form-hint" style="margin-top: 8px;">
-                        Restart the client or open a new session after applying changes.
-                    </div>
+                    <div class="form-hint" x-text="t('integrations.userConfigHint')"></div>
+                    <div class="form-hint" style="margin-top: 8px;" x-text="t('integrations.restartHint')"></div>
                 </div>
 
                 <template x-if="integrations.length === 0">
                     <div class="card u-text-center" style="grid-column: 1 / -1; padding: 48px;">
-                        <p style="color: var(--text-secondary)">No supported integrations detected.</p>
+                        <p style="color: var(--text-secondary)" x-text="t('integrations.empty')"></p>
                     </div>
                 </template>
 
@@ -450,7 +460,7 @@
                                     :class="integrationActionIsBusy(integration, 'apply') ? 'action-btn--busy' : ''"
                                     :disabled="integrationBusyProduct === integration.product || integration.state === 'configured'"
                                     @click="runIntegrationAction(integration.product, 'apply')"
-                                    x-text="integrationActionIsBusy(integration, 'apply') ? 'Working...' : integrationApplyLabel()">
+                                    x-text="integrationActionIsBusy(integration, 'apply') ? t('common.working') : integrationApplyLabel()">
                                 </button>
                                 <span x-show="integrationActionDisabledReason(integration, 'apply')" class="tooltip-content"
                                     x-text="integrationActionDisabledReason(integration, 'apply')"></span>
@@ -463,7 +473,7 @@
                                     :class="integrationActionIsBusy(integration, 'rollback') ? 'action-btn--busy' : ''"
                                     :disabled="integrationBusyProduct === integration.product || integration.state !== 'configured' || !integration.backup_available"
                                     @click="runIntegrationAction(integration.product, 'rollback')"
-                                    x-text="integrationActionIsBusy(integration, 'rollback') ? 'Working...' : integrationRollbackLabel()">
+                                    x-text="integrationActionIsBusy(integration, 'rollback') ? t('common.working') : integrationRollbackLabel()">
                                 </button>
                                 <span x-show="integrationActionDisabledReason(integration, 'rollback')" class="tooltip-content"
                                     x-text="integrationActionDisabledReason(integration, 'rollback')"></span>
@@ -478,7 +488,7 @@
                                         x-text="integrationResultBadgeLabel(integrationResultFor(integration).type)"></span>
                                     <button type="button" class="integration-result__dismiss"
                                         @click="clearIntegrationResult(integration.product)"
-                                        aria-label="Dismiss result">×</button>
+                                        :aria-label="t('integrations.dismissResult')">×</button>
                                 </div>
                                 <div class="integration-result__title" x-text="integrationResultFor(integration).title"></div>
                                 <div class="integration-result__message" x-text="integrationResultFor(integration).message"></div>
@@ -487,14 +497,14 @@
 
                         <details class="integration-preview-details">
                             <summary class="form-hint integration-card-summary integration-card-summary-row">
-                                <span class="integration-card-summary-label">View Configuration Details & Preview</span>
-                                <span class="integration-card-summary-meta" x-text="integration.backup_available ? 'Backup Available' : 'No backup yet'"></span>
+                                <span class="integration-card-summary-label" x-text="t('integrations.detailsPreview')"></span>
+                                <span class="integration-card-summary-meta" x-text="integrationBackupMeta(integration)"></span>
                             </summary>
 
                             <div class="integration-preview-grid" style="margin-top: 12px;">
                                 <div class="integration-preview-panel">
-                                    <div class="kv-label">Current file</div>
-                                    <pre class="integration-preview-code" x-text="integrationPreviewValue(integration.current_content, 'File does not exist yet.')"></pre>
+                                    <div class="kv-label" x-text="t('integrations.currentFile')"></div>
+                                    <pre class="integration-preview-code" x-text="integrationPreviewValue(integration.current_content, integrationCurrentPreviewEmptyLabel())"></pre>
                                 </div>
                                 <div class="integration-preview-panel">
                                     <div class="kv-label" x-text="integrationSecondaryPreviewLabel(integration)"></div>
@@ -516,19 +526,16 @@
                 <div class="card service-panel" style="grid-column: 1 / -1;">
                     <div class="service-panel__header">
                         <div>
-                            <h3 class="provider-name">Clipal Service</h3>
-                            <div class="service-panel__copy">
-                                Manage the OS background service (same as <span class="pill pill--xs pill--neutral pill--mono">clipal service
-                                    *</span>)
-                            </div>
+                            <h3 class="provider-name" x-text="t('services.title')"></h3>
+                            <div class="service-panel__copy" x-text="t('services.subtitle')"></div>
                         </div>
                         <div class="service-panel__metrics">
                             <button type="button" class="pill pill--sm pill--neutral pill--mono" disabled
                                 :class="serviceStatus.supported ? 'pill-success' : 'pill-danger'"
-                                x-text="serviceStatus.supported ? 'Supported' : 'Unsupported'"></button>
+                                x-text="serviceStatus.supported ? t('services.supported') : t('services.unsupported')"></button>
                             <button type="button" class="pill pill--sm pill--neutral pill--mono" disabled
                                 :class="serviceStatus.installed ? 'pill-success' : 'pill-warning'"
-                                x-text="serviceStatus.installed ? 'Installed' : 'Not installed'"></button>
+                                x-text="serviceStatus.installed ? t('services.installed') : t('services.notInstalled')"></button>
                             <button type="button" class="pill pill--sm pill--neutral pill--mono" disabled
                                 :class="serviceRuntimeClass()"
                                 x-text="serviceRuntimeLabel()"></button>
@@ -537,41 +544,33 @@
 
                     <template x-if="!serviceStatus.supported">
                         <div class="card u-text-center" style="grid-column: 1 / -1; padding: 40px;">
-                            <p style="color: var(--text-secondary); margin-bottom: 10px;">
-                                Service manager is not supported on this OS build.
-                            </p>
+                            <p style="color: var(--text-secondary); margin-bottom: 10px;" x-text="t('services.unsupportedBuild')"></p>
                             <p class="form-hint" x-show="serviceStatus.error" x-text="serviceStatus.error"></p>
                         </div>
                     </template>
 
                     <template x-if="serviceStatus.supported && !serviceStatus.installed">
                         <div class="card u-text-center" style="grid-column: 1 / -1; padding: 40px;">
-                            <p style="color: var(--text-primary); font-weight: 600; margin-bottom: 10px;">
-                                Autostart service is not installed yet.
-                            </p>
+                            <p style="color: var(--text-primary); font-weight: 600; margin-bottom: 10px;" x-text="t('services.autostartNotInstalled')"></p>
                             <p style="color: var(--text-secondary); margin-bottom: 18px;">
                                 <template x-if="serviceStatus.os === 'windows'">
-                                    <span>Install requires an elevated console on Windows. Use the command below.</span>
+                                    <span x-text="t('services.installWindows')"></span>
                                 </template>
                                 <template x-if="serviceStatus.os !== 'windows'">
-                                    <span>Click <b>Install</b> to register Clipal as a background service for this
-                                        user.</span>
+                                    <span x-text="t('services.installOther')"></span>
                                 </template>
                             </p>
                             <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
                                 <template x-if="serviceStatus.os === 'windows'">
-                                    <button type="button" class="btn btn-primary" @click="copyServiceInstallCommand()">
-                                        Copy Install Command
-                                    </button>
+                                    <button type="button" class="btn btn-primary" @click="copyServiceInstallCommand()"
+                                        x-text="t('services.copyInstallCommand')"></button>
                                 </template>
                                 <template x-if="serviceStatus.os !== 'windows'">
-                                    <button type="button" class="btn btn-primary" @click="serviceAction('install')">
-                                        Install Service
-                                    </button>
+                                    <button type="button" class="btn btn-primary" @click="serviceAction('install')"
+                                        x-text="t('services.installService')"></button>
                                 </template>
-                                <button type="button" class="btn btn-secondary" @click="loadServiceStatus()">
-                                    Refresh
-                                </button>
+                                <button type="button" class="btn btn-secondary" @click="loadServiceStatus()"
+                                    x-text="t('common.refresh')"></button>
                             </div>
                             <div class="form-hint" style="margin-top: 14px;">
                                 <template x-if="serviceStatus.install_command">
@@ -596,7 +595,7 @@
                                         :class="[!serviceStatus.running ? 'action-btn--primary' : 'action-btn--secondary', serviceActionIsBusy('start') ? 'action-btn--busy' : '']"
                                         :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('start')"
                                         @click="serviceAction('start')"
-                                        x-text="serviceActionIsBusy('start') ? 'Working...' : 'Start'">
+                                        x-text="serviceActionIsBusy('start') ? t('common.working') : t('services.start')">
                                     </button>
                                     <span x-show="serviceActionDisabledReason('start')" class="tooltip-content"
                                         x-text="serviceActionDisabledReason('start')"></span>
@@ -609,7 +608,7 @@
                                         :class="[serviceStatus.running ? 'action-btn--primary' : 'action-btn--secondary', serviceActionIsBusy('restart') ? 'action-btn--busy' : '']"
                                         :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('restart')"
                                         @click="serviceAction('restart')"
-                                        x-text="serviceActionIsBusy('restart') ? 'Working...' : 'Restart'">
+                                        x-text="serviceActionIsBusy('restart') ? t('common.working') : t('services.restart')">
                                     </button>
                                     <span x-show="serviceActionDisabledReason('restart')" class="tooltip-content"
                                         x-text="serviceActionDisabledReason('restart')"></span>
@@ -622,7 +621,7 @@
                                         :class="serviceActionIsBusy('stop') ? 'action-btn--busy' : ''"
                                         :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('stop')"
                                         @click="serviceAction('stop')"
-                                        x-text="serviceActionIsBusy('stop') ? 'Working...' : 'Stop'">
+                                        x-text="serviceActionIsBusy('stop') ? t('common.working') : t('services.stop')">
                                     </button>
                                     <span x-show="serviceActionDisabledReason('stop')" class="tooltip-content"
                                         x-text="serviceActionDisabledReason('stop')"></span>
@@ -635,21 +634,20 @@
                                         :class="serviceActionIsBusy('uninstall') ? 'action-btn--busy' : ''"
                                         :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('uninstall')"
                                         @click="serviceAction('uninstall')"
-                                        x-text="serviceActionIsBusy('uninstall') ? 'Working...' : 'Uninstall'">
+                                        x-text="serviceActionIsBusy('uninstall') ? t('common.working') : t('services.uninstall')">
                                     </button>
                                     <span x-show="serviceActionDisabledReason('uninstall')" class="tooltip-content"
                                         x-text="serviceActionDisabledReason('uninstall')"></span>
                                 </span>
-                                <button type="button" class="action-btn action-btn--secondary" @click="loadServiceStatus()">
-                                    Check
-                                </button>
+                                <button type="button" class="action-btn action-btn--secondary" @click="loadServiceStatus()"
+                                    x-text="t('services.check')"></button>
                             </div>
 
                             <div class="service-action-secondary-row service-action-aside">
                                 <label class="checkbox-label service-force-toggle"
-                                    title="Reinstall or refresh the existing service definition when needed">
+                                    :title="t('services.forceHint')">
                                 <input type="checkbox" x-model="serviceForm.force">
-                                <span class="checkbox-text">Force</span>
+                                <span class="checkbox-text" x-text="t('services.force')"></span>
                                 </label>
 
                                 <span class="action-shell"
@@ -660,7 +658,7 @@
                                         :class="serviceActionIsBusy('install') ? 'action-btn--busy' : ''"
                                         :disabled="serviceBusyAction !== '' || !!serviceActionDisabledReason('install')"
                                         @click="serviceAction('install')"
-                                        x-text="serviceActionIsBusy('install') ? 'Working...' : 'Reinstall'">
+                                        x-text="serviceActionIsBusy('install') ? t('common.working') : t('services.reinstall')">
                                     </button>
                                     <span x-show="serviceActionDisabledReason('install')" class="tooltip-content"
                                         x-text="serviceActionDisabledReason('install')"></span>
@@ -670,10 +668,8 @@
                     </div>
 
                     <div class="form-hint" style="margin-bottom: 12px;"
-                        x-show="serviceStatus.supported && serviceStatus.installed">
-                        Restart or stop may temporarily disconnect this page. Status auto-refreshes every 3s while this
-                        tab is open.
-                    </div>
+                        x-show="serviceStatus.supported && serviceStatus.installed"
+                        x-text="t('services.restartDisconnectHint')"></div>
 
                     <pre class="log-output"
                         x-show="serviceStatus.supported && serviceStatus.installed && !!serviceStatus.output"
@@ -689,28 +685,25 @@
             <div class="card-grid">
                 <div class="card status-card status-system-card" style="grid-column: 1 / -1;">
                     <div class="status-card__header">
-                        <h3 class="provider-name status-card__title">System Info</h3>
+                        <h3 class="provider-name status-card__title" x-text="statusSystemInfoLabel()"></h3>
                     </div>
                     <div class="kv-grid">
                         <div class="kv-item">
-                            <div class="kv-label">Uptime</div>
+                            <div class="kv-label" x-text="t('statusPage.uptime')"></div>
                             <div class="kv-value" x-text="status.uptime"></div>
                         </div>
                         <div class="kv-item">
-                            <div class="kv-label">Config Dir</div>
+                            <div class="kv-label" x-text="t('statusPage.configDir')"></div>
                             <div class="kv-value" x-text="status.config_dir"></div>
                         </div>
                         <div class="kv-item">
-                            <div class="kv-label">Circuit Breaker</div>
+                            <div class="kv-label" x-text="t('statusPage.circuitBreaker')"></div>
                             <div class="kv-value">
                                 <span x-show="globalConfig.circuit_breaker.failure_threshold > 0">
-                                    <span
-                                        x-text="globalConfig.circuit_breaker.failure_threshold + ' fail / ' + globalConfig.circuit_breaker.success_threshold + ' succ' + ' (' + globalConfig.circuit_breaker.open_timeout + ')'"></span>
+                                    <span x-text="statusCircuitBreakerSummary()"></span>
                                 </span>
                                 <span x-show="globalConfig.circuit_breaker.failure_threshold <= 0"
-                                    class="text-tertiary">
-                                    Disabled
-                                </span>
+                                    class="text-tertiary" x-text="t('statusPage.disabled')"></span>
                             </div>
                         </div>
                     </div>
@@ -722,11 +715,11 @@
                             <div class="status-card__heading">
                                 <div class="status-card__title-row">
                                     <h3 class="provider-name status-card__title" x-text="clientLabel(name)"></h3>
-                                    <span class="status-card__mode pill" x-text="client.mode || 'auto'"></span>
+                                    <span class="status-card__mode pill" x-text="statusModeLabel(client.mode)"></span>
                                 </div>
                                 <div class="status-card__meta">
                                     <template x-if="scopeProviderEntries(client).length > 0">
-                                        <span class="status-card__meta-label">Scoped routing</span>
+                                        <span class="status-card__meta-label" x-text="t('statusPage.scopedRouting')"></span>
                                     </template>
                                     <template x-for="[scope, provider] in scopeProviderEntries(client)"
                                         :key="scope + ':' + provider">
@@ -740,15 +733,15 @@
                                         <span class="status-card__meta-divider"></span>
                                     </template>
                                     <template x-if="(client.mode || '') === 'manual'">
-                                        <span class="status-card__meta-label">Pinned</span>
+                                        <span class="status-card__meta-label" x-text="t('statusPage.pinned')"></span>
                                     </template>
                                     <template x-if="(client.mode || '') === 'manual'">
                                         <span class="pill pill--xs pill--neutral pill--mono"
-                                            x-text="client.pinned_provider || 'None'"></span>
+                                            x-text="client.pinned_provider || t('common.none')"></span>
                                     </template>
                                 </div>
                                 <div class="form-hint" style="margin-top: 8px;" x-show="client.last_switch">
-                                    Last switch:
+                                    <span x-text="t('statusPage.lastSwitch')"></span>
                                     <span
                                         x-text="(client.last_switch && client.last_switch.label) ? client.last_switch.label : ''"></span>
                                     <span
@@ -757,7 +750,7 @@
                                         x-text="(client.last_switch && client.last_switch.at) ? client.last_switch.at : ''"></span>
                                 </div>
                                 <div class="form-hint" style="margin-top: 8px;" x-show="client.last_request">
-                                    Last request:
+                                    <span x-text="t('statusPage.lastRequest')"></span>
                                     <span
                                         x-text="(client.last_request && client.last_request.label) ? client.last_request.label : ''"></span>
                                     <span
@@ -769,9 +762,9 @@
                                 </div>
                             </div>
                             <div class="status-card__metrics">
-                                <span class="pill pill--compact pill--neutral pill--mono" x-text="'Providers: ' + client.provider_count"></span>
+                                <span class="pill pill--compact pill--neutral pill--mono" x-text="statusMetricProviders(client.provider_count)"></span>
                                 <span class="pill pill--compact pill--neutral pill--mono"
-                                    x-text="'Enabled: ' + ((client.enabled_providers && client.enabled_providers.length) || 0)"></span>
+                                    x-text="statusMetricEnabled((client.enabled_providers && client.enabled_providers.length) || 0)"></span>
                             </div>
                         </div>
                         <div class="status-card__groups">

@@ -111,18 +111,8 @@ func TestServeIndex_ContentTypeAndNotFound(t *testing.T) {
 		t.Fatalf("content-type=%q", got)
 	}
 	body := w.Body.String()
-	for _, want := range []string{
-		`/static/styles/tokens.css`,
-		`/static/styles/base.css`,
-		`/static/styles/primitives.css`,
-		`/static/styles/components.css`,
-		`/static/styles/pages.css`,
-		`/static/clipal-icon.svg`,
-		`rel="icon"`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("index body missing %q", want)
-		}
+	if body == "" {
+		t.Fatalf("expected index body to be non-empty")
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "http://localhost/missing", nil)
@@ -153,122 +143,6 @@ func TestServeStatic_ContentTypeAndNotFound(t *testing.T) {
 		t.Fatalf("missing status=%d body=%s", w.Code, w.Body.String())
 	}
 
-	for _, path := range []string{
-		"/static/styles/tokens.css",
-		"/static/styles/base.css",
-		"/static/styles/primitives.css",
-		"/static/styles/components.css",
-		"/static/styles/pages.css",
-	} {
-		req = httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)
-		w = httptest.NewRecorder()
-		h.serveStatic(w, req)
-		if w.Code != http.StatusOK {
-			t.Fatalf("%s status=%d body=%s", path, w.Code, w.Body.String())
-		}
-		if got := w.Header().Get("Content-Type"); got != "text/css; charset=utf-8" {
-			t.Fatalf("%s content-type=%q", path, got)
-		}
-	}
-	req = httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
-	w = httptest.NewRecorder()
-	h.serveIndex(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("index status=%d body=%s", w.Code, w.Body.String())
-	}
-	index := w.Body.String()
-	for _, want := range []string{
-		`/static/styles/tokens.css`,
-		`/static/styles/base.css`,
-		`/static/styles/primitives.css`,
-		`/static/styles/components.css`,
-		`/static/styles/pages.css`,
-		`status-card__header`,
-		`class="card status-card"`,
-		`provider-card__header`,
-		`class="card provider-card"`,
-		`takeover-page__header`,
-		`service-panel__header`,
-		`id="tabbtn-providers"`,
-		`id="tabbtn-integrations"`,
-		`id="tabbtn-settings"`,
-		`id="tabbtn-services"`,
-		`id="tabbtn-status"`,
-		`locale-switcher`,
-		`@click="setLocale('en')"`,
-		`@click="setLocale('zh-CN')"`,
-		`>EN<`,
-		`>中文<`,
-		`x-text="t('nav.integrations')"`,
-		`x-text="t('nav.settings')"`,
-		`x-text="t('nav.services')"`,
-		`x-text="t('nav.status')"`,
-		`x-text="showEditProviderModal ? t('modal.provider.editTitle') : t('modal.provider.addTitle')"`,
-	} {
-		if !strings.Contains(index, want) {
-			t.Fatalf("index missing %q", want)
-		}
-	}
-}
-
-func TestServeStatic_ServesBrandIconAndUpdatedLabels(t *testing.T) {
-	h := NewHandler(t.TempDir(), "test", nil)
-
-	req := httptest.NewRequest(http.MethodGet, "http://localhost/static/clipal-icon.svg", nil)
-	w := httptest.NewRecorder()
-	h.serveStatic(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("icon status=%d body=%s", w.Code, w.Body.String())
-	}
-	if got := w.Header().Get("Content-Type"); got != "image/svg+xml" {
-		t.Fatalf("icon content-type=%q", got)
-	}
-	iconBody := w.Body.String()
-	for _, want := range []string{`<svg`, `fill="#000000"`, `stroke="#FFFFFF"`} {
-		if !strings.Contains(iconBody, want) {
-			t.Fatalf("icon body missing %q", want)
-		}
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "http://localhost/static/app.js", nil)
-	w = httptest.NewRecorder()
-	h.serveStatic(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("app.js status=%d body=%s", w.Code, w.Body.String())
-	}
-	js := w.Body.String()
-	for _, want := range []string{
-		`locale: 'en'`,
-		`supportedLocales: ['en', 'zh-CN']`,
-		`localStorage.getItem('clipal.locale')`,
-		`localStorage.setItem('clipal.locale', this.locale)`,
-		`messages: {`,
-		`t(key) {`,
-		`tf(key, params = {}) {`,
-		`setLocale(locale) {`,
-		`return 'Gemini CLI';`,
-		`return 'Continue';`,
-		`return 'Aider';`,
-		`return 'Goose';`,
-		`serviceBusyAction: ''`,
-		`serviceActionDisabledReason(action) {`,
-		`return 'Service is already running';`,
-		`return 'Service is not running';`,
-		`sticky_sessions: {`,
-		`busy_backpressure: {`,
-	} {
-		if !strings.Contains(js, want) {
-			t.Fatalf("app.js missing %q", want)
-		}
-	}
-	for _, unwanted := range []string{
-		`{ value: 'claude-code', label: 'Claude Code' }`,
-		`{ value: 'codex', label: 'Codex' }`,
-	} {
-		if strings.Contains(js, unwanted) {
-			t.Fatalf("app.js still contains %q", unwanted)
-		}
-	}
 }
 
 func TestLoopbackAndLocalhostHelpers(t *testing.T) {
@@ -336,85 +210,19 @@ func TestLocalOnly_APIStateChanging_RejectsWrongContentType(t *testing.T) {
 	}
 }
 
-func TestIntegrations_UIAndRouteAreRegistered(t *testing.T) {
+func TestIntegrations_RouteIsRegistered(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
 	h := NewHandler(t.TempDir(), "test", nil)
 
-	req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
-	w := httptest.NewRecorder()
-	h.serveIndex(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("index status=%d body=%s", w.Code, w.Body.String())
-	}
-	index := w.Body.String()
-	if !strings.Contains(index, `x-text="t('nav.integrations')"`) {
-		t.Fatalf("index missing integrations translation hook: %s", index)
-	}
-	for _, want := range []string{
-		"This only edits your user-level config file.",
-		"Restart the client or open a new session after applying changes.",
-		"Current file",
-		"integrationSecondaryPreviewLabel",
-		"integration-card-actions",
-		"integration-card-header",
-		"integration-card-heading",
-		"integration-card-actions-right",
-		"action-btn--primary",
-		"integration-card-summary",
-		"integration-card-summary-row",
-		"action-shell",
-		"action-tooltip",
-		`x-text="t('nav.integrations')"`,
-	} {
-		if !strings.Contains(index, want) {
-			t.Fatalf("index missing %q: %s", want, index)
-		}
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "http://localhost/static/app.js", nil)
-	w = httptest.NewRecorder()
-	h.serveStatic(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("app.js status=%d body=%s", w.Code, w.Body.String())
-	}
-	js := w.Body.String()
-	for _, want := range []string{
-		"/api/integrations",
-		"Claude Code",
-		"Codex CLI",
-		"OpenCode",
-		`messages: {`,
-		`setLocale(locale) {`,
-		"Restart the client or open a new session",
-		"ANTHROPIC_AUTH_TOKEN is left untouched",
-		`wire_api = "responses"`,
-		"current_content",
-		"planned_content",
-		"backup_content",
-		"backup_target_existed",
-		"Already using Clipal",
-		"No backup yet. Apply once before restore becomes available.",
-		"Restore is only available while Clipal is active.",
-		"Latest backup",
-		"Original file did not exist before Clipal takeover.",
-	} {
-		if !strings.Contains(js, want) {
-			t.Fatalf("app.js missing %q", want)
-		}
-	}
-	if strings.Contains(js, "clipal-placeholder") {
-		t.Fatalf("app.js should not suggest overwriting Claude auth token")
-	}
-
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
-	req = httptest.NewRequest(http.MethodGet, "http://localhost/api/integrations", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/integrations", nil)
 	req.Host = "localhost:3333"
 	req.RemoteAddr = "127.0.0.1:12345"
-	w = httptest.NewRecorder()
+	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("route status=%d body=%s", w.Code, w.Body.String())

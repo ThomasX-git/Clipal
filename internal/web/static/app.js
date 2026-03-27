@@ -3,7 +3,7 @@ function app() {
         // State
         isLoading: false,
         theme: localStorage.getItem('theme') || 'system',
-        locale: 'en',
+        locale: document.documentElement.lang === 'zh-CN' ? 'zh-CN' : 'en',
         supportedLocales: ['en', 'zh-CN'],
         activeTab: 'providers',
         servicePoll: null,
@@ -21,6 +21,7 @@ function app() {
                     uptime: 'Uptime: {uptime}'
                 },
                 nav: {
+                    sectionsLabel: 'Sections',
                     providers: 'Providers',
                     integrations: 'CLI Takeover',
                     settings: 'Global Settings',
@@ -33,12 +34,16 @@ function app() {
                     reset: 'Reset',
                     export: 'Export',
                     cancel: 'Cancel',
+                    refresh: 'Refresh',
+                    working: 'Working...',
                     enabled: 'Enabled',
                     disabled: 'Disabled',
                     active: 'Active'
                 },
                 locale: {
-                    label: 'Language'
+                    label: 'Language',
+                    english: 'English',
+                    chinese: 'Chinese'
                 },
                 theme: {
                     current: 'Current theme: {theme}',
@@ -90,7 +95,8 @@ function app() {
                     addedMessage: 'The provider is now available for {client}.',
                     deleteConfirm: 'Are you sure you want to delete provider "{name}"?',
                     deletedTitle: 'Deleted provider {name}',
-                    deletedMessage: 'It has been removed from {client}\'s provider list.'
+                    deletedMessage: 'It has been removed from {client}\'s provider list.',
+                    clientTypeLabel: 'Client Type'
                 },
                 modal: {
                     provider: {
@@ -106,7 +112,8 @@ function app() {
                         savedAs: 'Saved as',
                         savedAsSingle: '1 line -> api_key',
                         savedAsMultiple: '2+ lines -> api_keys',
-                        keepExistingKeys: 'Leave empty to keep the current {count} configured key{suffix}.',
+                        keepExistingKey: 'Leave empty to keep the current configured key.',
+                        keepExistingKeys: 'Leave empty to keep the current {count} configured keys.',
                         priority: 'Priority',
                         priorityHint: 'Smaller numbers are tried first.',
                         saveProvider: 'Save Provider'
@@ -161,6 +168,108 @@ function app() {
                     exportSuccess: 'Configuration exported successfully',
                     exportFailure: 'Failed to export configuration'
                 },
+                integrations: {
+                    title: 'CLI Takeover',
+                    subtitle: 'Let Clipal take over supported CLI clients by modifying their user-level config files.',
+                    refresh: 'Refresh',
+                    userConfigHint: 'This only edits your user-level config file. Project-local or managed settings may still override the effective behavior.',
+                    restartHint: 'Restart the client or open a new session after applying changes.',
+                    empty: 'No supported integrations detected.',
+                    apply: 'Use Clipal',
+                    rollback: 'Restore',
+                    stateConfigured: 'Configured',
+                    stateNeedsAttention: 'Needs attention',
+                    stateNotConfigured: 'Not configured',
+                    alreadyUsing: 'Already using Clipal',
+                    noBackupYet: 'No backup yet. Apply once before restore becomes available.',
+                    restoreOnlyActive: 'Restore is only available while Clipal is active.',
+                    dismissResult: 'Dismiss result',
+                    detailsPreview: 'View Configuration Details & Preview',
+                    backupAvailable: 'Backup Available',
+                    noBackupMeta: 'No backup yet',
+                    currentFile: 'Current file',
+                    fileDoesNotExistYet: 'File does not exist yet.',
+                    latestBackup: 'Latest backup',
+                    afterApply: 'After apply',
+                    backupEmpty: 'Backup is empty.',
+                    originalFileMissing: 'Original file did not exist before Clipal takeover.',
+                    noPlannedChanges: 'No planned changes.',
+                    resultUpdated: 'Updated',
+                    resultError: 'Error',
+                    resultNotice: 'Notice',
+                    resultUsingClipalTitle: 'Now using Clipal',
+                    resultRestoredTitle: 'Restored from backup',
+                    resultRestartMessage: 'Restart the client or open a new session to apply changes.',
+                    resultApplyErrorTitle: 'Couldn’t update this client',
+                    resultRestoreErrorTitle: 'Couldn’t restore this client',
+                    noteClaude: 'Clipal only updates ANTHROPIC_BASE_URL. ANTHROPIC_AUTH_TOKEN is left untouched.',
+                    noteCodex: 'Clipal updates model_provider to clipal and writes [model_providers.clipal] with the local URL and wire_api = "responses".',
+                    noteOpencode: 'Clipal adds or updates provider.clipal, points it at the local Clipal OpenAI-compatible URL, and switches the active model to clipal/<current-model>.',
+                    noteGemini: 'Clipal only updates GEMINI_API_BASE in ~/.gemini/.env. Other Gemini environment overrides may still take precedence.',
+                    noteContinue: 'Clipal adds or updates a user-level Continue model entry that points at the local Clipal OpenAI-compatible URL. You may still need to select that model inside Continue.',
+                    noteAider: 'Clipal updates the home-level .aider.conf.yml openai-api-base and a minimal OpenAI-compatible model value. Repo-local config, .env, or CLI flags can still override it.',
+                    noteGoose: 'Clipal creates or updates a managed Goose custom provider file. You may still need to select the Clipal provider or model inside Goose.',
+                    noteDefault: 'Clipal only edits the user-level config file shown on this card.'
+                },
+                services: {
+                    title: 'Clipal Service',
+                    subtitle: 'Manage the OS background service (same as clipal service *)',
+                    supported: 'Supported',
+                    unsupported: 'Unsupported',
+                    installed: 'Installed',
+                    notInstalled: 'Not installed',
+                    running: 'Running',
+                    stopped: 'Stopped',
+                    needsAttention: 'Needs attention',
+                    unsupportedBuild: 'Service manager is not supported on this OS build.',
+                    autostartNotInstalled: 'Autostart service is not installed yet.',
+                    installWindows: 'Install requires an elevated console on Windows. Use the command below.',
+                    installOther: 'Click Install to register Clipal as a background service for this user.',
+                    copyInstallCommand: 'Copy Install Command',
+                    installService: 'Install Service',
+                    start: 'Start',
+                    restart: 'Restart',
+                    stop: 'Stop',
+                    uninstall: 'Uninstall',
+                    check: 'Check',
+                    force: 'Force',
+                    reinstall: 'Reinstall',
+                    forceHint: 'Reinstall or refresh the existing service definition when needed',
+                    restartDisconnectHint: 'Restart or stop may temporarily disconnect this page. Status auto-refreshes every 3s while this tab is open.',
+                    confirmUninstall: 'Uninstall the system service?',
+                    confirmStop: 'Stop the system service?',
+                    confirmRestart: 'Restart the system service?',
+                    requestedAction: 'Requested service {action}. Refreshing...',
+                    installCommandCopied: 'Install command copied',
+                    copyCommandFailed: 'Failed to copy command',
+                    notSupportedReason: 'Service manager is not supported on this OS',
+                    alreadyInstalledReason: 'Already installed. Enable Force to reinstall or refresh the service definition.',
+                    installFirst: 'Install the service first',
+                    alreadyRunning: 'Service is already running',
+                    notRunning: 'Service is not running',
+                    serviceNotInstalled: 'Service is not installed'
+                },
+                statusPage: {
+                    systemInfo: 'System Info',
+                    uptime: 'Uptime',
+                    configDir: 'Config Dir',
+                    circuitBreaker: 'Circuit Breaker',
+                    disabled: 'Disabled',
+                    circuitBreakerSummary: '{failure} fail / {success} succ ({timeout})',
+                    scopeDefault: 'Default',
+                    scopeResponses: 'Responses',
+                    scopeGeminiStream: 'Gemini stream',
+                    scopedRouting: 'Scoped routing',
+                    pinned: 'Pinned',
+                    lastSwitch: 'Last switch:',
+                    lastRequest: 'Last request:',
+                    providersCount: 'Providers: {count}',
+                    enabledCount: 'Enabled: {count}',
+                    groupCurrent: 'Current',
+                    groupActive: 'Active',
+                    groupDisabled: 'Disabled',
+                    keysAvailable: 'Keys available: {available}/{total}'
+                },
                 toast: {
                     success: 'Success',
                     requestFailed: 'Request failed',
@@ -185,6 +294,7 @@ function app() {
                     uptime: '运行时长：{uptime}'
                 },
                 nav: {
+                    sectionsLabel: '功能分区',
                     providers: 'Providers',
                     integrations: 'CLI 接管',
                     settings: '全局设置',
@@ -197,12 +307,16 @@ function app() {
                     reset: '重置',
                     export: '导出',
                     cancel: '取消',
+                    refresh: '刷新',
+                    working: '处理中...',
                     enabled: '已启用',
                     disabled: '已禁用',
                     active: '可用'
                 },
                 locale: {
-                    label: '语言'
+                    label: '语言',
+                    english: '英文',
+                    chinese: '中文'
                 },
                 theme: {
                     current: '当前主题：{theme}',
@@ -254,7 +368,8 @@ function app() {
                     addedMessage: '这个 Provider 现在可供 {client} 使用。',
                     deleteConfirm: '确认删除 Provider “{name}” 吗？',
                     deletedTitle: '已删除 Provider {name}',
-                    deletedMessage: '它已从 {client} 的 Provider 列表中移除。'
+                    deletedMessage: '它已从 {client} 的 Provider 列表中移除。',
+                    clientTypeLabel: '客户端类型'
                 },
                 modal: {
                     provider: {
@@ -270,7 +385,7 @@ function app() {
                         savedAs: '保存方式',
                         savedAsSingle: '1 行 -> api_key',
                         savedAsMultiple: '2 行及以上 -> api_keys',
-                        keepExistingKeys: '留空则保留当前已配置的 {count} 个 key{suffix}。',
+                        keepExistingKeys: '留空则保留当前已配置的 {count} 个 key。',
                         priority: '优先级',
                         priorityHint: '数字越小越先尝试。',
                         saveProvider: '保存 Provider'
@@ -324,6 +439,108 @@ function app() {
                     saveSuccess: '配置已保存。部分改动可能需要重启。',
                     exportSuccess: '配置导出成功',
                     exportFailure: '配置导出失败'
+                },
+                integrations: {
+                    title: 'CLI 接管',
+                    subtitle: '让 Clipal 通过修改用户级配置文件接管受支持的 CLI 客户端。',
+                    refresh: '刷新',
+                    userConfigHint: '这里只会修改你的用户级配置文件。项目级或受管控配置仍可能覆盖最终生效结果。',
+                    restartHint: '应用修改后，请重启客户端或重新打开一个会话。',
+                    empty: '未检测到受支持的集成。',
+                    apply: '使用 Clipal',
+                    rollback: '恢复',
+                    stateConfigured: '已配置',
+                    stateNeedsAttention: '需要关注',
+                    stateNotConfigured: '未配置',
+                    alreadyUsing: '已经在使用 Clipal',
+                    noBackupYet: '目前还没有备份。至少先使用一次 Clipal 后才能恢复。',
+                    restoreOnlyActive: '只有在当前由 Clipal 接管时才能恢复。',
+                    dismissResult: '关闭结果',
+                    detailsPreview: '查看配置详情与预览',
+                    backupAvailable: '已有备份',
+                    noBackupMeta: '暂无备份',
+                    currentFile: '当前文件',
+                    fileDoesNotExistYet: '文件尚不存在。',
+                    latestBackup: '最新备份',
+                    afterApply: '启用后结果',
+                    backupEmpty: '备份内容为空。',
+                    originalFileMissing: 'Clipal 接管前原始文件不存在。',
+                    noPlannedChanges: '没有计划中的变更。',
+                    resultUpdated: '已更新',
+                    resultError: '错误',
+                    resultNotice: '提示',
+                    resultUsingClipalTitle: '已开始使用 Clipal',
+                    resultRestoredTitle: '已从备份恢复',
+                    resultRestartMessage: '请重启客户端或重新打开一个会话以应用改动。',
+                    resultApplyErrorTitle: '更新此客户端失败',
+                    resultRestoreErrorTitle: '恢复此客户端失败',
+                    noteClaude: 'Clipal 只会更新 ANTHROPIC_BASE_URL，不会改动 ANTHROPIC_AUTH_TOKEN。',
+                    noteCodex: 'Clipal 会把 model_provider 更新为 clipal，并写入 [model_providers.clipal]，使用本地 URL 和 wire_api = "responses"。',
+                    noteOpencode: 'Clipal 会新增或更新 provider.clipal，指向本地 Clipal OpenAI 兼容地址，并把当前 model 切到 clipal/<当前模型>。',
+                    noteGemini: 'Clipal 只会更新 ~/.gemini/.env 中的 GEMINI_API_BASE。其他 Gemini 环境覆盖项仍可能优先生效。',
+                    noteContinue: 'Clipal 会新增或更新用户级 Continue 模型项，指向本地 Clipal OpenAI 兼容地址。你可能仍需在 Continue 中手动选择该模型。',
+                    noteAider: 'Clipal 会更新 home 级 .aider.conf.yml 中的 openai-api-base 和一个最小 OpenAI 兼容 model。仓库级配置、.env 或 CLI 参数仍可能覆盖它。',
+                    noteGoose: 'Clipal 会创建或更新受管控的 Goose 自定义 provider 文件。你可能仍需在 Goose 中选择 Clipal provider 或 model。',
+                    noteDefault: 'Clipal 只会修改此卡片展示的用户级配置文件。'
+                },
+                services: {
+                    title: 'Clipal 服务',
+                    subtitle: '管理操作系统后台服务（等同于 clipal service *）',
+                    supported: '支持',
+                    unsupported: '不支持',
+                    installed: '已安装',
+                    notInstalled: '未安装',
+                    running: '运行中',
+                    stopped: '已停止',
+                    needsAttention: '需要关注',
+                    unsupportedBuild: '当前操作系统构建不支持服务管理器。',
+                    autostartNotInstalled: '自动启动服务尚未安装。',
+                    installWindows: 'Windows 上安装需要提升权限的控制台。请使用下方命令。',
+                    installOther: '点击“安装服务”即可为当前用户注册 Clipal 后台服务。',
+                    copyInstallCommand: '复制安装命令',
+                    installService: '安装服务',
+                    start: '启动',
+                    restart: '重启',
+                    stop: '停止',
+                    uninstall: '卸载',
+                    check: '检查',
+                    force: '强制',
+                    reinstall: '重新安装',
+                    forceHint: '在需要时重新安装或刷新现有服务定义',
+                    restartDisconnectHint: '重启或停止服务时此页面可能会暂时断开。当前标签页打开时状态每 3 秒自动刷新一次。',
+                    confirmUninstall: '确认卸载系统服务吗？',
+                    confirmStop: '确认停止系统服务吗？',
+                    confirmRestart: '确认重启系统服务吗？',
+                    requestedAction: '已请求执行服务操作：{action}。正在刷新……',
+                    installCommandCopied: '安装命令已复制',
+                    copyCommandFailed: '复制命令失败',
+                    notSupportedReason: '当前操作系统不支持服务管理器',
+                    alreadyInstalledReason: '服务已安装。启用“强制”即可重新安装或刷新服务定义。',
+                    installFirst: '请先安装服务',
+                    alreadyRunning: '服务已在运行中',
+                    notRunning: '服务当前未运行',
+                    serviceNotInstalled: '服务尚未安装'
+                },
+                statusPage: {
+                    systemInfo: '系统信息',
+                    uptime: '运行时长',
+                    configDir: '配置目录',
+                    circuitBreaker: '熔断器',
+                    disabled: '已禁用',
+                    circuitBreakerSummary: '{failure} 次失败 / {success} 次成功（{timeout}）',
+                    scopeDefault: '默认',
+                    scopeResponses: 'Responses',
+                    scopeGeminiStream: 'Gemini 流式',
+                    scopedRouting: '作用域路由',
+                    pinned: '已固定',
+                    lastSwitch: '最近切换：',
+                    lastRequest: '最近请求：',
+                    providersCount: '提供方：{count}',
+                    enabledCount: '已启用：{count}',
+                    groupCurrent: '当前',
+                    groupActive: '可用',
+                    groupDisabled: '不可用',
+                    keysAvailable: '可用密钥：{available}/{total}'
                 },
                 toast: {
                     success: '成功',
@@ -511,6 +728,26 @@ function app() {
             this.applyLocale();
         },
 
+        focusLocaleButton(locale) {
+            this.$nextTick(() => {
+                const ref = locale === 'zh-CN' ? this.$refs.localeZh : this.$refs.localeEn;
+                if (ref && typeof ref.focus === 'function') {
+                    ref.focus();
+                }
+            });
+        },
+
+        moveLocale(direction) {
+            const index = this.supportedLocales.indexOf(this.locale);
+            if (index === -1) {
+                return;
+            }
+            const next = (index + direction + this.supportedLocales.length) % this.supportedLocales.length;
+            const locale = this.supportedLocales[next];
+            this.setLocale(locale);
+            this.focusLocaleButton(locale);
+        },
+
         // Initialization
         async init() {
             this.initLocale();
@@ -601,11 +838,11 @@ function app() {
             const value = String(scope || '').trim();
             switch (value) {
                 case 'default':
-                    return 'Default';
+                    return this.t('statusPage.scopeDefault');
                 case 'openai_responses':
-                    return 'Responses';
+                    return this.t('statusPage.scopeResponses');
                 case 'gemini_stream_generate_content':
-                    return 'Gemini stream';
+                    return this.t('statusPage.scopeGeminiStream');
                 default:
                     return value;
             }
@@ -673,9 +910,9 @@ function app() {
 
         providerStatusGroups(client) {
             const groups = [
-                { key: 'current', label: 'Current' },
-                { key: 'active', label: 'Active' },
-                { key: 'disabled', label: 'Disabled' }
+                { key: 'current', label: this.t('statusPage.groupCurrent') },
+                { key: 'active', label: this.t('statusPage.groupActive') },
+                { key: 'disabled', label: this.t('statusPage.groupDisabled') }
             ];
             return groups.filter(group => this.providerStatusEntries(client, group.key).length > 0);
         },
@@ -753,9 +990,9 @@ function app() {
             if (disabledReason) {
                 return;
             }
-            if (action === 'uninstall' && !confirm('Uninstall the system service?')) return;
-            if (action === 'stop' && !confirm('Stop the system service?')) return;
-            if (action === 'restart' && !confirm('Restart the system service?')) return;
+            if (action === 'uninstall' && !confirm(this.t('services.confirmUninstall'))) return;
+            if (action === 'stop' && !confirm(this.t('services.confirmStop'))) return;
+            if (action === 'restart' && !confirm(this.t('services.confirmRestart'))) return;
 
             // Best-effort request: the service might stop/restart mid-flight.
             this.serviceBusyAction = action;
@@ -770,7 +1007,7 @@ function app() {
                 // Ignore network errors (common when the service restarts).
             }
 
-            this.showAlert('info', `Requested service ${action}. Refreshing...`);
+            this.showAlert('info', this.tf('services.requestedAction', { action: this.serviceActionLabel(action) }));
             // Staggered refresh to cover fast/slow restart paths.
             setTimeout(() => this.loadServiceStatus(true), 1500);
             setTimeout(() => this.loadServiceStatus(true), 3500);
@@ -813,16 +1050,16 @@ function app() {
 
         async copyServiceInstallCommand() {
             const ok = await this.copyToClipboard(this.serviceStatus.install_command);
-            if (ok) this.showAlert('success', 'Install command copied');
-            else this.showAlert('error', 'Failed to copy command');
+            if (ok) this.showAlert('success', this.t('services.installCommandCopied'));
+            else this.showAlert('error', this.t('services.copyCommandFailed'));
         },
 
         serviceRuntimeLabel() {
-            if (!this.serviceStatus.supported) return 'Unsupported';
-            if (!this.serviceStatus.installed) return 'Not installed';
-            if (this.serviceStatus.running) return 'Running';
-            if (this.serviceStatus.loaded) return 'Stopped';
-            return 'Needs attention';
+            if (!this.serviceStatus.supported) return this.t('services.unsupported');
+            if (!this.serviceStatus.installed) return this.t('services.notInstalled');
+            if (this.serviceStatus.running) return this.t('services.running');
+            if (this.serviceStatus.loaded) return this.t('services.stopped');
+            return this.t('services.needsAttention');
         },
 
         serviceRuntimeClass() {
@@ -842,7 +1079,7 @@ function app() {
                 return '';
             }
             if (!this.serviceStatus.supported) {
-                return 'Service manager is not supported on this OS';
+                return this.t('services.notSupportedReason');
             }
 
             switch (String(action || '').trim()) {
@@ -850,21 +1087,21 @@ function app() {
                     if (!this.serviceStatus.installed) return '';
                     return this.serviceForm.force
                         ? ''
-                        : 'Already installed. Enable Force to reinstall or refresh the service definition.';
+                        : this.t('services.alreadyInstalledReason');
                 case 'start':
-                    if (!this.serviceStatus.installed) return 'Install the service first';
-                    if (this.serviceStatus.running) return 'Service is already running';
+                    if (!this.serviceStatus.installed) return this.t('services.installFirst');
+                    if (this.serviceStatus.running) return this.t('services.alreadyRunning');
                     return '';
                 case 'stop':
-                    if (!this.serviceStatus.installed) return 'Install the service first';
-                    if (!this.serviceStatus.running) return 'Service is not running';
+                    if (!this.serviceStatus.installed) return this.t('services.installFirst');
+                    if (!this.serviceStatus.running) return this.t('services.notRunning');
                     return '';
                 case 'restart':
-                    if (!this.serviceStatus.installed) return 'Install the service first';
-                    if (!this.serviceStatus.running) return 'Service is not running';
+                    if (!this.serviceStatus.installed) return this.t('services.installFirst');
+                    if (!this.serviceStatus.running) return this.t('services.notRunning');
                     return '';
                 case 'uninstall':
-                    if (!this.serviceStatus.installed) return 'Service is not installed';
+                    if (!this.serviceStatus.installed) return this.t('services.serviceNotInstalled');
                     return '';
                 default:
                     return '';
@@ -874,11 +1111,11 @@ function app() {
         integrationStateLabel(state) {
             switch (String(state || '').trim()) {
                 case 'configured':
-                    return 'Configured';
+                    return this.t('integrations.stateConfigured');
                 case 'error':
-                    return 'Needs attention';
+                    return this.t('integrations.stateNeedsAttention');
                 default:
-                    return 'Not configured';
+                    return this.t('integrations.stateNotConfigured');
             }
         },
 
@@ -916,11 +1153,11 @@ function app() {
 
 
         integrationApplyLabel() {
-            return 'Use Clipal';
+            return this.t('integrations.apply');
         },
 
         integrationRollbackLabel() {
-            return 'Restore';
+            return this.t('integrations.rollback');
         },
 
         integrationActionIsBusy(integration, action) {
@@ -937,13 +1174,13 @@ function app() {
                 return '';
             }
             if (action === 'apply') {
-                return integration.state === 'configured' ? 'Already using Clipal' : '';
+                return integration.state === 'configured' ? this.t('integrations.alreadyUsing') : '';
             }
             if (!integration.backup_available) {
-                return 'No backup yet. Apply once before restore becomes available.';
+                return this.t('integrations.noBackupYet');
             }
             return integration.state !== 'configured'
-                ? 'Restore is only available while Clipal is active.'
+                ? this.t('integrations.restoreOnlyActive')
                 : '';
         },
 
@@ -951,21 +1188,21 @@ function app() {
         integrationProductNote(product) {
             switch (String(product || '').trim()) {
                 case 'claude':
-                    return 'Clipal only updates ANTHROPIC_BASE_URL. ANTHROPIC_AUTH_TOKEN is left untouched.';
+                    return this.t('integrations.noteClaude');
                 case 'codex':
-                    return 'Clipal updates model_provider to clipal and writes [model_providers.clipal] with the local URL and wire_api = "responses".';
+                    return this.t('integrations.noteCodex');
                 case 'opencode':
-                    return 'Clipal adds or updates provider.clipal, points it at the local Clipal OpenAI-compatible URL, and switches the active model to clipal/<current-model>.';
+                    return this.t('integrations.noteOpencode');
                 case 'gemini':
-                    return 'Clipal only updates GEMINI_API_BASE in ~/.gemini/.env. Other Gemini environment overrides may still take precedence.';
+                    return this.t('integrations.noteGemini');
                 case 'continue':
-                    return 'Clipal adds or updates a user-level Continue model entry that points at the local Clipal OpenAI-compatible URL. You may still need to select that model inside Continue.';
+                    return this.t('integrations.noteContinue');
                 case 'aider':
-                    return 'Clipal updates the home-level .aider.conf.yml openai-api-base and a minimal OpenAI-compatible model value. Repo-local config, .env, or CLI flags can still override it.';
+                    return this.t('integrations.noteAider');
                 case 'goose':
-                    return 'Clipal creates or updates a managed Goose custom provider file. You may still need to select the Clipal provider or model inside Goose.';
+                    return this.t('integrations.noteGoose');
                 default:
-                    return 'Clipal only edits the user-level config file shown on this card.';
+                    return this.t('integrations.noteDefault');
             }
         },
 
@@ -977,8 +1214,8 @@ function app() {
 
         integrationSecondaryPreviewLabel(integration) {
             return integration && integration.state === 'configured' && integration.backup_available
-                ? 'Latest backup'
-                : 'After apply';
+                ? this.t('integrations.latestBackup')
+                : this.t('integrations.afterApply');
         },
 
         integrationSecondaryPreviewContent(integration) {
@@ -991,10 +1228,10 @@ function app() {
         integrationSecondaryPreviewEmptyLabel(integration) {
             if (integration && integration.state === 'configured' && integration.backup_available) {
                 return integration.backup_target_existed
-                    ? 'Backup is empty.'
-                    : 'Original file did not exist before Clipal takeover.';
+                    ? this.t('integrations.backupEmpty')
+                    : this.t('integrations.originalFileMissing');
             }
-            return 'No planned changes.';
+            return this.t('integrations.noPlannedChanges');
         },
 
         integrationResultFor(integration) {
@@ -1018,11 +1255,11 @@ function app() {
         integrationResultBadgeLabel(type) {
             switch (String(type || '').trim()) {
                 case 'success':
-                    return 'Updated';
+                    return this.t('integrations.resultUpdated');
                 case 'error':
-                    return 'Error';
+                    return this.t('integrations.resultError');
                 default:
-                    return 'Notice';
+                    return this.t('integrations.resultNotice');
             }
         },
 
@@ -1098,21 +1335,21 @@ function app() {
                     this.setIntegrationResult(
                         name,
                         'success',
-                        'Now using Clipal',
-                        'Restart the client or open a new session to apply changes.'
+                        this.t('integrations.resultUsingClipalTitle'),
+                        this.t('integrations.resultRestartMessage')
                     );
                 } else {
                     this.setIntegrationResult(
                         name,
                         'success',
-                        'Restored from backup',
-                        'Restart the client or open a new session to apply changes.'
+                        this.t('integrations.resultRestoredTitle'),
+                        this.t('integrations.resultRestartMessage')
                     );
                 }
             } catch (error) {
                 const title = op === 'apply'
-                    ? 'Couldn’t update this client'
-                    : 'Couldn’t restore this client';
+                    ? this.t('integrations.resultApplyErrorTitle')
+                    : this.t('integrations.resultRestoreErrorTitle');
                 this.setIntegrationResult(name, 'error', title, error.message);
                 this.showAlert('error', error.message, title);
                 console.error(`Failed to ${op} integration:`, error);
@@ -1181,15 +1418,72 @@ function app() {
         },
 
         providerEditKeyHint() {
-            return this.tf('modal.provider.keepExistingKeys', {
-                count: this.editingProviderKeyCount,
-                suffix: this.editingProviderKeyCount === 1 ? '' : 's'
-            });
+            const count = Number(this.editingProviderKeyCount || 0);
+            if (this.locale === 'zh-CN') {
+                return this.tf('modal.provider.keepExistingKeys', { count });
+            }
+            if (count === 1) {
+                return this.t('modal.provider.keepExistingKey');
+            }
+            return this.tf('modal.provider.keepExistingKeys', { count });
         },
 
         levelLabel(level) {
             const value = String(level || '').trim().toLowerCase();
             return this.t(`level.${value}`);
+        },
+
+        serviceActionLabel(action) {
+            switch (String(action || '').trim()) {
+                case 'install':
+                    return this.t('services.installService');
+                case 'start':
+                    return this.t('services.start');
+                case 'restart':
+                    return this.t('services.restart');
+                case 'stop':
+                    return this.t('services.stop');
+                case 'uninstall':
+                    return this.t('services.uninstall');
+                case 'check':
+                    return this.t('services.check');
+                default:
+                    return action;
+            }
+        },
+
+        integrationBackupMeta(integration) {
+            return integration && integration.backup_available
+                ? this.t('integrations.backupAvailable')
+                : this.t('integrations.noBackupMeta');
+        },
+
+        integrationCurrentPreviewEmptyLabel() {
+            return this.t('integrations.fileDoesNotExistYet');
+        },
+
+        statusSystemInfoLabel() {
+            return this.t('statusPage.systemInfo');
+        },
+
+        statusModeLabel(mode) {
+            return this.modeLabel(mode || 'auto');
+        },
+
+        statusMetricProviders(count) {
+            return this.tf('statusPage.providersCount', { count: Number(count || 0) });
+        },
+
+        statusMetricEnabled(count) {
+            return this.tf('statusPage.enabledCount', { count: Number(count || 0) });
+        },
+
+        statusCircuitBreakerSummary() {
+            return this.tf('statusPage.circuitBreakerSummary', {
+                failure: this.globalConfig.circuit_breaker.failure_threshold,
+                success: this.globalConfig.circuit_breaker.success_threshold,
+                timeout: this.globalConfig.circuit_breaker.open_timeout
+            });
         },
 
         get hasEnabledProviders() {
@@ -1224,7 +1518,7 @@ function app() {
             const available = Number((p && p.available_key_count) || 0);
             const total = Number((p && p.key_count) || 0);
             if (total > 0) {
-                title = `${title}\nKeys available: ${available}/${total}`;
+                title = `${title}\n${this.tf('statusPage.keysAvailable', { available, total })}`;
             }
 
             const skip = String((p && p.skip_reason) || '').trim();
