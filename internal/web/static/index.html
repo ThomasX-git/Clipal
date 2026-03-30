@@ -25,6 +25,7 @@
     <link rel="stylesheet" href="/static/styles/components.css">
     <link rel="stylesheet" href="/static/styles/pages.css">
     <script defer src="/static/alpine.min.js"></script>
+    <script src="/static/sortable.min.js"></script>
 </head>
 
 <body x-data="app()" x-init="init()">
@@ -167,7 +168,7 @@
             </div>
 
             <!-- Providers List -->
-            <div class="card-grid">
+            <div id="providers-list" class="card-grid">
                 <template x-if="providers.length === 0">
                     <div class="card u-text-center" style="grid-column: 1 / -1; padding: 60px;">
                         <p style="color: var(--text-secondary)" x-text="tf('providers.empty', { client: clientLabel(selectedClient) })"></p>
@@ -175,7 +176,7 @@
                 </template>
 
                 <template x-for="provider in providers" :key="provider.name">
-                    <div class="card provider-card">
+                    <div class="card provider-card" :data-id="provider.name" :title="t('providers.dragToReorder')">
                         <div class="provider-card__header">
                             <div class="provider-card__info">
                                 <div class="provider-card__title-row">

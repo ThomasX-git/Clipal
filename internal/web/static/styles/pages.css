@@ -6,18 +6,56 @@
 
 /* Shared page block roots */
 
-.provider-card,
-.status-card,
-.status-system-card,
-.takeover-page__panel,
-.service-panel {
-    min-width: 0;
-}
+    .service-panel,
+    .provider-card {
+        min-width: 0;
+        position: relative;
+        cursor: grab;
+        transition: var(--transition);
+        user-select: none;
+    }
 
-.provider-card__title,
-.status-card__title {
-    min-width: 0;
-}
+    .provider-card:active {
+        cursor: grabbing;
+    }
+
+    .provider-card:hover {
+        border-color: var(--primary-soft);
+        transform: translateY(-2px);
+    }
+
+    /* Exclude interactive elements from grab cursor */
+    .provider-card .btn,
+    .provider-card button,
+    .provider-card input,
+    .provider-card .pill,
+    .provider-card .provider-card__actions {
+        cursor: default;
+    }
+
+    .provider-card__title,
+    .status-card__title {
+        min-width: 0;
+    }
+
+    .sortable-ghost {
+        opacity: 0.1 !important;
+        background: var(--bg-surface) !important;
+        border: 2px dashed var(--primary) !important;
+        transform: scale(0.95);
+    }
+
+    .sortable-chosen {
+        box-shadow: var(--shadow-xl), 0 0 0 2px var(--primary-soft) !important;
+        transform: scale(1.02);
+        z-index: 20;
+        background: var(--bg-card);
+    }
+
+    .sortable-drag {
+        opacity: 0.9 !important;
+        cursor: grabbing !important;
+    }
 
 /* System Status */
 

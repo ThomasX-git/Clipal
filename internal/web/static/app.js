@@ -67,6 +67,7 @@ function app() {
                     apiKeys: 'API Keys',
                     configuredCount: '{count} configured',
                     pinTitle: 'Pin (Manual)',
+                    dragToReorder: 'Drag to reorder providers',
                     edit: 'Edit',
                     delete: 'Delete',
                     disable: 'Disable',
@@ -369,7 +370,8 @@ function app() {
                     deleteConfirm: '确认删除 Provider “{name}” 吗？',
                     deletedTitle: '已删除 Provider {name}',
                     deletedMessage: '它已从 {client} 的 Provider 列表中移除。',
-                    clientTypeLabel: '客户端类型'
+                    clientTypeLabel: '客户端类型',
+                    dragToReorder: '拖拽调整优先级'
                 },
                 modal: {
                     provider: {
@@ -763,6 +765,9 @@ function app() {
                     this.loadGlobalConfig(),
                     this.loadIntegrations(true)
                 ]);
+                this.$nextTick(() => {
+                    this.initSortable();
+                });
             } finally {
                 this.isLoading = false;
             }
@@ -1515,10 +1520,93 @@ function app() {
             return title;
         },
 
-        async loadProviders() {
+        initSortable() {
+            const el = document.getElementById('providers-list');
+            if (!el || typeof Sortable === 'undefined') return;
+            
+            if (this.sortableInstance) {
+                this.sortableInstance.destroy();
+            }
+
+            this.sortableInstance = Sortable.create(el, {
+                animation: 250,
+                // Make the entire card draggable
+                handle: '.provider-card',
+                // Filter out buttons and inputs so they remain clickable
+                filter: '.btn, button, input, .pill, .provider-card__actions',
+                preventOnFilter: false,
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                dragClass: 'sortable-drag',
+                forceFallback: false,
+                onEnd: async (evt) => {
+                    if (evt.oldIndex === evt.newIndex) return;
+
+                    const previousProviders = (this.providers || []).map(provider => ({ ...provider }));
+                    const previousOrder = previousProviders.map(provider => provider.name);
+
+                    // Sortable has already mutated the DOM, but Alpine still thinks the
+                    // previous keyed order is intact. Restore the old DOM order first so
+                    // Alpine can apply the reordered state without scrambling cards.
+                    this.syncSortableDomOrder(previousOrder);
+                    this.applyLocalProviderReorder(evt.oldIndex, evt.newIndex);
+                    await this.afterProviderRender();
+                    const names = (this.providers || []).map(provider => provider.name);
+
+                    try {
+                        await this.apiCall(`/api/providers/${this.selectedClient}/_reorder`, {
+                            method: 'PUT',
+                            body: JSON.stringify({ providers: names })
+                        }, true);
+                    } catch (error) {
+                        console.error('Failed to reorder providers:', error);
+                        this.providers = previousProviders;
+                        await this.afterProviderRender();
+                    }
+                }
+            });
+        },
+
+        syncSortableDomOrder(order) {
+            if (!this.sortableInstance || typeof this.sortableInstance.sort !== 'function') {
+                return;
+            }
+            this.sortableInstance.sort(Array.isArray(order) ? order : [], false);
+        },
+
+        afterProviderRender() {
+            return new Promise(resolve => {
+                this.$nextTick(() => {
+                    this.syncSortableDomOrder((this.providers || []).map(provider => provider.name));
+                    resolve();
+                });
+            });
+        },
+
+        applyLocalProviderReorder(oldIndex, newIndex) {
+            const providers = Array.isArray(this.providers)
+                ? this.providers.map(provider => ({ ...provider }))
+                : [];
+            if (oldIndex < 0 || newIndex < 0 || oldIndex >= providers.length || newIndex >= providers.length) {
+                return;
+            }
+
+            const [moved] = providers.splice(oldIndex, 1);
+            if (!moved) {
+                return;
+            }
+            providers.splice(newIndex, 0, moved);
+
+            this.providers = providers.map((provider, index) => ({
+                ...provider,
+                priority: index + 1
+            }));
+        },
+
+        async loadProviders(background = false) {
             try {
                 const [providers, clientCfg] = await Promise.all([
-                    this.apiCall(`/api/providers/${this.selectedClient}`),
+                    this.apiCall(`/api/providers/${this.selectedClient}`, {}, background),
                     this.apiCall(`/api/client-config/${this.selectedClient}`, {}, true)
                 ]);
                 this.providers = providers || [];
@@ -1529,12 +1617,15 @@ function app() {
             }
         },
 
-        selectClient(clientType) {
+        async selectClient(clientType) {
             if (this.selectedClient === clientType) {
                 return;
             }
             this.selectedClient = clientType;
-            this.loadProviders();
+            await this.loadProviders();
+            this.$nextTick(() => {
+                this.initSortable();
+            });
         },
 
         async saveClientConfig(successToast = null) {
