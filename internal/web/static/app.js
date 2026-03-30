@@ -256,18 +256,18 @@ function app() {
                     circuitBreaker: 'Circuit Breaker',
                     disabled: 'Disabled',
                     circuitBreakerSummary: '{failure} fail / {success} succ ({timeout})',
-                    scopeDefault: 'Default',
-                    scopeResponses: 'Responses',
-                    scopeGeminiStream: 'Gemini stream',
-                    scopedRouting: 'Scoped routing',
                     pinned: 'Pinned',
                     lastSwitch: 'Last switch:',
                     lastRequest: 'Last request:',
+                    recentActivity: 'Recent activity',
                     providersCount: 'Providers: {count}',
                     enabledCount: 'Enabled: {count}',
                     groupCurrent: 'Current',
                     groupActive: 'Active',
                     groupDisabled: 'Disabled',
+                    groupCoolingDown: 'Cooling down',
+                    groupUnavailable: 'Unavailable',
+                    groupRecoveryProbe: 'Recovery probe',
                     keysAvailable: 'Keys available: {available}/{total}'
                 },
                 toast: {
@@ -528,18 +528,18 @@ function app() {
                     circuitBreaker: '熔断器',
                     disabled: '已禁用',
                     circuitBreakerSummary: '{failure} 次失败 / {success} 次成功（{timeout}）',
-                    scopeDefault: '默认',
-                    scopeResponses: 'Responses',
-                    scopeGeminiStream: 'Gemini 流式',
-                    scopedRouting: '作用域路由',
                     pinned: '已固定',
                     lastSwitch: '最近切换：',
                     lastRequest: '最近请求：',
+                    recentActivity: '最近活动',
                     providersCount: '提供方：{count}',
                     enabledCount: '已启用：{count}',
                     groupCurrent: '当前',
                     groupActive: '可用',
-                    groupDisabled: '不可用',
+                    groupDisabled: '已禁用',
+                    groupCoolingDown: '冷却中',
+                    groupUnavailable: '不可用',
+                    groupRecoveryProbe: '恢复探测',
                     keysAvailable: '可用密钥：{available}/{total}'
                 },
                 toast: {
@@ -834,32 +834,6 @@ function app() {
             }
         },
 
-        scopeLabel(scope) {
-            const value = String(scope || '').trim();
-            switch (value) {
-                case 'default':
-                    return this.t('statusPage.scopeDefault');
-                case 'openai_responses':
-                    return this.t('statusPage.scopeResponses');
-                case 'gemini_stream_generate_content':
-                    return this.t('statusPage.scopeGeminiStream');
-                default:
-                    return value;
-            }
-        },
-
-        scopeProviderEntries(client) {
-            const current = String((client && client.current_provider) || '').trim();
-            const providers = (client && client.current_providers) ? client.current_providers : {};
-            return Object.entries(providers)
-                .filter(([scope, provider]) => {
-                    const scopeName = String(scope || '').trim();
-                    const providerName = String(provider || '').trim();
-                    return scopeName && scopeName !== 'default' && providerName && providerName !== current;
-                })
-                .sort(([a], [b]) => a.localeCompare(b));
-        },
-
         providerStatusEntries(client, state) {
             const current = String((client && client.current_provider) || '').trim();
             const providers = Array.isArray(client && client.providers) ? client.providers : [];
@@ -893,15 +867,20 @@ function app() {
                 const skip = String(p.skip_reason || '').trim();
                 const isCurrent = !!current && name === current;
                 const isDisabled = p.enabled === false || !!skip;
-                const isActive = !isCurrent && !isDisabled;
 
                 switch (state) {
                     case 'current':
                         return isCurrent;
                     case 'active':
-                        return isActive;
+                        return !isCurrent && !isDisabled && p.state === 'available';
                     case 'disabled':
-                        return !isCurrent && isDisabled;
+                        return !isCurrent && p.state === 'disabled';
+                    case 'cooling_down':
+                        return !isCurrent && p.state === 'cooling_down';
+                    case 'unavailable':
+                        return !isCurrent && p.state === 'unavailable';
+                    case 'recovery_probe':
+                        return !isCurrent && p.state === 'recovery_probe';
                     default:
                         return false;
                 }
@@ -912,16 +891,19 @@ function app() {
             const groups = [
                 { key: 'current', label: this.t('statusPage.groupCurrent') },
                 { key: 'active', label: this.t('statusPage.groupActive') },
-                { key: 'disabled', label: this.t('statusPage.groupDisabled') }
+                { key: 'disabled', label: this.t('statusPage.groupDisabled') },
+                { key: 'cooling_down', label: this.t('statusPage.groupCoolingDown') },
+                { key: 'unavailable', label: this.t('statusPage.groupUnavailable') },
+                { key: 'recovery_probe', label: this.t('statusPage.groupRecoveryProbe') }
             ];
             return groups.filter(group => this.providerStatusEntries(client, group.key).length > 0);
         },
 
         providerStatusChipClass(state, p) {
             if (state === 'current') return 'chip-primary';
-            if (state === 'disabled') {
-                return p && p.enabled === false ? 'chip-muted' : 'chip-danger';
-            }
+            if (state === 'disabled') return 'chip-danger';
+            if (state === 'cooling_down' || state === 'unavailable') return 'chip-warn';
+            if (state === 'recovery_probe') return 'chip-info';
             return '';
         },
 

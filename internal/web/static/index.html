@@ -717,20 +717,6 @@
                                     <span class="status-card__mode pill" x-text="statusModeLabel(client.mode)"></span>
                                 </div>
                                 <div class="status-card__meta">
-                                    <template x-if="scopeProviderEntries(client).length > 0">
-                                        <span class="status-card__meta-label" x-text="t('statusPage.scopedRouting')"></span>
-                                    </template>
-                                    <template x-for="[scope, provider] in scopeProviderEntries(client)"
-                                        :key="scope + ':' + provider">
-                                        <span class="status-card__scoped-route">
-                                            <span x-text="scopeLabel(scope)"></span>
-                                            <span>&rarr;</span>
-                                            <span class="pill pill--xs pill--neutral pill--mono" x-text="provider"></span>
-                                        </span>
-                                    </template>
-                                    <template x-if="(client.mode || '') === 'manual'">
-                                        <span class="status-card__meta-divider"></span>
-                                    </template>
                                     <template x-if="(client.mode || '') === 'manual'">
                                         <span class="status-card__meta-label" x-text="t('statusPage.pinned')"></span>
                                     </template>
@@ -739,25 +725,21 @@
                                             x-text="client.pinned_provider || t('common.none')"></span>
                                     </template>
                                 </div>
-                                <div class="form-hint" style="margin-top: 8px;" x-show="client.last_switch">
-                                    <span x-text="t('statusPage.lastSwitch')"></span>
-                                    <span
-                                        x-text="(client.last_switch && client.last_switch.label) ? client.last_switch.label : ''"></span>
-                                    <span
-                                        x-text="(client.last_switch && client.last_switch.detail) ? client.last_switch.detail : ''"></span>
-                                    <span
-                                        x-text="(client.last_switch && client.last_switch.at) ? client.last_switch.at : ''"></span>
-                                </div>
-                                <div class="form-hint" style="margin-top: 8px;" x-show="client.last_request">
-                                    <span x-text="t('statusPage.lastRequest')"></span>
-                                    <span
-                                        x-text="(client.last_request && client.last_request.label) ? client.last_request.label : ''"></span>
-                                    <span
-                                        x-text="(client.last_request && client.last_request.detail) ? client.last_request.detail : ''"></span>
-                                    <span
-                                        x-text="(client.last_request && client.last_request.bytes) ? ('(' + client.last_request.bytes + ' bytes)') : ''"></span>
-                                    <span
-                                        x-text="(client.last_request && client.last_request.at) ? client.last_request.at : ''"></span>
+                                <div class="status-card__activity" x-show="client.last_switch || client.last_request">
+                                    <div class="status-card__activity-title" x-text="t('statusPage.recentActivity')"></div>
+                                    <div class="status-card__activity-item" x-show="client.last_switch">
+                                        <span x-text="t('statusPage.lastSwitch')"></span>
+                                        <span x-text="(client.last_switch && client.last_switch.label) ? client.last_switch.label : ''"></span>
+                                        <span x-text="(client.last_switch && client.last_switch.detail) ? client.last_switch.detail : ''"></span>
+                                        <span x-text="(client.last_switch && client.last_switch.at) ? client.last_switch.at : ''"></span>
+                                    </div>
+                                    <div class="status-card__activity-item" x-show="client.last_request">
+                                        <span x-text="t('statusPage.lastRequest')"></span>
+                                        <span x-text="(client.last_request && client.last_request.label) ? client.last_request.label : ''"></span>
+                                        <span x-text="(client.last_request && client.last_request.detail) ? client.last_request.detail : ''"></span>
+                                        <span x-text="(client.last_request && client.last_request.bytes) ? ('(' + client.last_request.bytes + ' bytes)') : ''"></span>
+                                        <span x-text="(client.last_request && client.last_request.at) ? client.last_request.at : ''"></span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="status-card__metrics">

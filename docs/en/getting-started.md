@@ -3,7 +3,7 @@
 ## 1. Download and Install
 
 Download the right binary from [Releases](https://github.com/lansespirit/Clipal/releases) and place it on your `PATH`.
-Current stable release: [`v0.11.4`](https://github.com/lansespirit/Clipal/releases/tag/v0.11.4)
+Current stable release: [`v0.11.5`](https://github.com/lansespirit/Clipal/releases/tag/v0.11.5)
 
 Platform-specific notes:
 

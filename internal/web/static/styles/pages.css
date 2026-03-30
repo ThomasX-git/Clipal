@@ -71,18 +71,6 @@
     letter-spacing: 0.08em;
 }
 
-.status-card__meta-divider {
-    width: 1px;
-    height: 14px;
-    background: var(--border);
-}
-
-.status-card__scoped-route {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
 .status-card__metrics {
     display: flex;
     align-items: center;
@@ -115,6 +103,28 @@
 
 .status-card__group-chips {
     min-width: 0;
+}
+
+.status-card__activity {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+
+.status-card__activity-title {
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+    font-weight: var(--font-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+}
+
+.status-card__activity-item {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    line-height: 1.4;
 }
 
 /* Providers */

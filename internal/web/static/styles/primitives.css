@@ -199,9 +199,33 @@
     border-color: transparent;
 }
 
+.chip-warn {
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--warning);
+    border-color: transparent;
+}
+
+.chip-info {
+    background: var(--primary-soft);
+    color: var(--primary);
+    border-color: transparent;
+}
+
 .chip--danger {
     background: var(--danger-soft);
     color: var(--danger);
+    border-color: transparent;
+}
+
+.chip--warn {
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--warning);
+    border-color: transparent;
+}
+
+.chip--info {
+    background: var(--primary-soft);
+    color: var(--primary);
     border-color: transparent;
 }
 
