@@ -106,9 +106,7 @@
 }
 
 .status-card__activity {
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
+    margin-top: 12px;
 }
 
 .status-card__activity-title {
