@@ -1,0 +1,1851 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clipal — The Ultimate CLI Takeover for Claude Code, Codex & Gemini</title>
+  <meta name="description"
+    content="One binary CLI Takeover for Claude Code, Codex, and Gemini. Manage multi-key token pools, bypass Bedrock/Vertex protocol issues, and monitor real-time logs. No Docker, no Python.">
+  <meta name="keywords"
+    content="claude code proxy, codex cli token pool, gemini cli config, anthropic bedrock proxy, vertex ai claude code, clipal, cli takeover">
+  <link rel="canonical" href="https://clipal.paiart.com">
+  <link rel="alternate" hreflang="en" href="https://clipal.paiart.com">
+  <link rel="alternate" hreflang="zh-Hans" href="https://clipal.paiart.com">
+  <link rel="alternate" hreflang="x-default" href="https://clipal.paiart.com">
+
+  <!-- Favicon -->
+  <link rel="icon" href="assets/icons/favicon.ico" sizes="any">
+  <link rel="icon" type="image/svg+xml" href="assets/icons/clipal-icon.svg">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- OpenGraph -->
+  <meta property="og:title" content="Clipal — Universal CLI Takeover">
+  <meta property="og:description" content="One binary. Claude Code, Codex & Gemini. Zero configuration hell.">
+  <meta property="og:image" content="https://clipal.paiart.com/assets/screenshots/clipal-og-image.jpeg">
+  <meta property="og:url" content="https://clipal.paiart.com">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Clipal — PAIART">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Clipal — Local LLM Gateway">
+  <meta name="twitter:description" content="One binary. All your AI tools. Zero configuration hell.">
+  <meta name="twitter:image" content="https://clipal.paiart.com/assets/screenshots/clipal-og-image.jpeg">
+
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Clipal",
+    "description": "Local LLM API gateway and manager with bulletproof failover and one-click CLI takeover.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS, Linux, Windows",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "license": "https://opensource.org/licenses/MIT",
+    "url": "https://clipal.paiart.com",
+    "downloadUrl": "https://github.com/lansespirit/Clipal/releases"
+  }
+  </script>
+
+  <!-- FAQ Structured Data (for SERP Rich Snippets) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "How does Clipal takeover Claude Code / Codex CLI?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Clipal intelligently patches configuration files like ~/.claude/settings.json and project-level .clauderc to route all traffic through its local gateway, ensuring multi-key rotation and failover."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can Clipal use AWS Bedrock or Google Vertex AI with Claude Code?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Clipal provides perfect Anthropic protocol emulation and header scrubbing, allowing Claude Code to communicate with Bedrock or Vertex AI seamlessly."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is Clipal local and secure?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Absolutely. Clipal is a local binary. Your API keys are stored only on your machine in the encrypted config.json and never leave your hardware."
+        }
+      }
+    ]
+  }
+  </script>
+</head>
+
+<body class="is-loading">
+
+  <!-- ===================== NAVIGATION ===================== -->
+  <header id="site-header">
+    <nav class="nav-container" role="navigation" aria-label="Main navigation">
+      <a href="#" class="nav-logo" aria-label="Clipal Home">
+        <img src="assets/icons/clipal-icon.svg" alt="" width="28" height="28" class="nav-logo-icon" aria-hidden="true">
+        <span class="nav-logo-text">Clipal</span>
+      </a>
+
+      <div class="nav-links">
+        <a href="#features" class="nav-link" data-i18n="nav.features">Features</a>
+        <a href="#install" class="nav-link" data-i18n="nav.install">Quick Start</a>
+        <a href="#how-it-works" class="nav-link" data-i18n="nav.howitworks">How It Works</a>
+        <a href="#" target="_blank" rel="noopener noreferrer" class="nav-link" data-i18n="nav.docs"
+          data-doclink="docs">Docs</a>
+      </div>
+
+      <div class="nav-actions">
+        <button class="lang-toggle" id="lang-toggle" aria-label="Switch to Chinese" aria-pressed="false">
+          <span class="lang-label lang-en">EN</span>
+          <span class="lang-sep">/</span>
+          <span class="lang-label lang-zh">中文</span>
+        </button>
+        <a href="https://github.com/lansespirit/Clipal" target="_blank" rel="noopener noreferrer" class="btn-ghost"
+          id="nav-github">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path
+              d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
+          </svg>
+          <span data-i18n="nav.github">GitHub</span>
+        </a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ===================== HERO ===================== -->
+    <section id="hero" aria-labelledby="hero-heading">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="container hero-container">
+
+        <div class="hero-copy">
+          <div class="eyebrow">
+            <span class="eyebrow-pulse" aria-hidden="true"></span>
+            <span data-i18n="hero.eyebrow">LLM Proxy · No Docker · Open Source</span>
+          </div>
+
+          <h1 id="hero-heading" class="hero-h1">
+            <span data-i18n="hero.line1">Universal CLI Takeover.</span><br>
+            <span class="text-gradient" data-i18n="hero.line2">Claude Code, Codex & Gemini.</span><br>
+            <span data-i18n="hero.line3">One Binary to Rule Them All.</span>
+          </h1>
+
+          <p class="hero-sub" data-i18n="hero.sub">
+            The professional LLM infrastructure for <strong>Claude Code</strong>, <strong>Codex</strong>, and
+            <strong>Gemini CLI</strong>. Universal gateway for any tool supporting custom <code>BASE_URL</code>. No
+            Docker, no Python, just performance.
+          </p>
+
+          <div class="cta-group">
+            <a href="https://github.com/lansespirit/Clipal/releases" target="_blank" rel="noopener noreferrer"
+              id="cta-primary" class="btn-primary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span id="cta-primary-text" data-i18n="hero.cta.download">Download Clipal</span>
+              <span id="cta-platform-badge" class="platform-badge"></span>
+            </a>
+            <a href="https://github.com/lansespirit/Clipal" target="_blank" rel="noopener noreferrer"
+              class="btn-secondary" id="cta-github">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path
+                  d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
+              </svg>
+              <span data-i18n="hero.cta.github">Star on GitHub</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <div class="terminal" id="hero-terminal">
+            <div class="terminal-titlebar" aria-hidden="true">
+              <div class="terminal-dots">
+                <span class="dot dot-red"></span>
+                <span class="dot dot-yellow"></span>
+                <span class="dot dot-green"></span>
+              </div>
+              <span class="terminal-title">clipal — zsh</span>
+            </div>
+            <div class="terminal-body" id="terminal-output" role="log" aria-label="Terminal demo output"
+              aria-live="polite"></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===================== ECOSYSTEM ===================== -->
+    <section id="ecosystem" aria-labelledby="ecosystem-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <div class="section-eyebrow" data-i18n="ecosystem.eyebrow">Universal Compatibility</div>
+          <h2 id="ecosystem-heading" class="section-title" data-i18n="ecosystem.title">Claude Code, Codex & Gemini.
+            Natively.</h2>
+          <p class="section-sub" data-i18n="ecosystem.sub">Directly patches <code>~/.claude/settings.json</code> &
+            <code>~/.codex/config.toml</code>. Clipal also serves as a unified proxy for Aider, Continue, Jan, Cherry
+            Studio, Chatbox, and any
+            app supporting custom API endpoints.
+          </p>
+        </div>
+        <div class="ecosystem-track-container reveal">
+
+          <!-- Track 1: CORE PROTOCOLS (Static & Centered) -->
+          <div class="ecosystem-block">
+            <p class="ecosystem-label" data-i18n="ecosystem.protocols">Supported Protocols</p>
+            <div class="logo-row-static">
+              <div class="logo-item brand-light" title="OpenAI"><img src="assets/logos/openai.svg" alt="OpenAI"></div>
+              <div class="logo-item brand-light" title="Anthropic"><img src="assets/logos/anthropic.svg"
+                  alt="Anthropic"></div>
+              <div class="logo-item brand-light" title="Google Gemini"><img src="assets/logos/google.svg"
+                  alt="Google Gemini"></div>
+            </div>
+          </div>
+
+          <div class="ecosystem-divider" aria-hidden="true"></div>
+
+          <!-- Track 2: EXTENDED ECOSYSTEM (Unified High-Density Marquee) -->
+          <div class="ecosystem-block">
+            <p class="ecosystem-label" data-i18n="ecosystem.cli">CLI Tools & AI LLM Applications</p>
+            <div class="marquee-row row-cli">
+              <div class="marquee-content">
+                <!-- Original Set (Mini Icons) -->
+                <div class="logo-item logo-eco brand-light" title="DeepSeek"><img src="assets/logos/deepseek.svg"
+                    alt="DeepSeek"></div>
+                <div class="logo-item logo-eco brand-light" title="Groq"><img src="assets/logos/groq.svg" alt="Groq">
+                </div>
+                <div class="logo-item logo-eco" title="Claude Code"><img src="assets/logos/claude-code.svg"
+                    alt="Claude Code"></div>
+                <div class="logo-item logo-eco brand-light" title="Codex CLI"><img src="assets/logos/codex-cli.svg"
+                    alt="Codex CLI"></div>
+                <div class="logo-item logo-eco brand-light" title="Gemini CLI"><img src="assets/logos/gemini-cli.svg"
+                    alt="Gemini CLI"></div>
+                <div class="logo-item logo-eco brand-light" title="OpenCode"><img src="assets/logos/opencode.svg"
+                    alt="OpenCode"></div>
+                <div class="logo-item logo-eco brand-light" title="Cline"><img src="assets/logos/cline.svg" alt="Cline">
+                </div>
+                <div class="logo-item logo-eco" title="Aider"><img src="assets/logos/aider.svg" alt="Aider"></div>
+                <div class="logo-item logo-eco" title="Goose"><img src="assets/logos/goose.svg" alt="Goose"></div>
+                <div class="logo-item logo-eco" title="Continue"><img src="assets/logos/continue.svg" alt="Continue">
+                </div>
+                <div class="logo-item logo-eco" title="Cherry Studio"><img src="assets/logos/cherry-studio.svg"
+                    alt="Cherry Studio"></div>
+                <div class="logo-item logo-eco" title="OpenClaw"><img src="assets/logos/openclaw.svg" alt="OpenClaw">
+                </div>
+                <div class="logo-item logo-eco" title="LobeChat"><img src="assets/logos/lobehub.svg" alt="LobeChat">
+                </div>
+                <div class="logo-item logo-eco" title="Ollama"><img src="assets/logos/ollama.svg" alt="Ollama"></div>
+                <div class="logo-item logo-eco" title="Chatbox"><img src="assets/logos/chatbox.png" alt="Chatbox"></div>
+                <div class="logo-item logo-eco brand-light" title="Jan"><img src="assets/logos/jan.svg" alt="Jan"></div>
+                <div class="logo-item logo-eco brand-light" title="AnythingLLM"><img src="assets/logos/anythingllm.svg"
+                    alt="AnythingLLM"></div>
+
+                <!-- Duplicate Set (Mini Icons) -->
+                <div class="logo-item logo-eco brand-light" aria-hidden="true"><img src="assets/logos/deepseek.svg"
+                    alt=""></div>
+                <div class="logo-item logo-eco brand-light" aria-hidden="true"><img src="assets/logos/groq.svg" alt="">
+                </div>
+                <div class="logo-item logo-eco" aria-hidden="true"><img src="assets/logos/claude-code.svg" alt=""></div>
+                <div class="logo-item logo-eco brand-light" aria-hidden="true"><img src="assets/logos/codex-cli.svg"
+                    alt=""></div>
+                <div class="logo-item logo-eco brand-light" aria-hidden="true"><img src="assets/logos/gemini-cli.svg"
+                    alt=""></div>
+                <div class="logo-item logo-eco brand-light" aria-hidden="true"><img src="assets/logos/opencode.svg"
+                    alt=""></div>
+                <div class="logo-item logo-eco brand-light" aria-hidden="true"><img src="assets/logos/cline.svg" alt="">
+                </div>
+                <div class="logo-item logo-eco" aria-hidden="true"><img src="assets/logos/aider.svg" alt=""></div>
+                <div class="logo-item logo-eco" aria-hidden="true"><img src="assets/logos/goose.svg" alt=""></div>
+                <div class="logo-item logo-eco" aria-hidden="true"><img src="assets/logos/continue.svg" alt=""></div>
+                <div class="logo-item logo-eco" aria-hidden="true"><img src="assets/logos/cherry-studio.svg" alt="">
+                </div>
+                <div class="logo-item logo-eco" aria-hidden="true"><img src="assets/logos/openclaw.svg" alt=""></div>
+                <div class="logo-item logo-eco" aria-hidden="true"><img src="assets/logos/lobehub.svg" alt=""></div>
+                <div class="logo-item logo-eco" aria-hidden="true"><img src="assets/logos/ollama.svg" alt=""></div>
+                <div class="logo-item logo-eco" aria-hidden="true"><img src="assets/logos/chatbox.png" alt=""></div>
+                <div class="logo-item logo-eco brand-light" aria-hidden="true"><img src="assets/logos/jan.svg" alt="">
+                </div>
+                <div class="logo-item logo-eco brand-light" aria-hidden="true"><img src="assets/logos/anythingllm.svg"
+                    alt=""></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== FEATURES ===================== -->
+    <section id="features" aria-labelledby="features-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <div class="section-eyebrow" data-i18n="features.eyebrow">Core Advantages</div>
+          <h2 id="features-heading" class="section-title" data-i18n="features.title">Built Different. Works Everywhere.
+          </h2>
+          <p class="section-sub" data-i18n="features.sub">Three things that make Clipal the only LLM proxy worth
+            running.</p>
+        </div>
+
+        <div class="fstrips">
+
+          <!-- 01 One-Click CLI Takeover -->
+          <article class="fstrip reveal" id="feature-takeover">
+            <span class="fstrip-num" aria-hidden="true">01</span>
+            <div class="fstrip-content">
+              <div class="fstrip-text">
+                <div class="fstrip-icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <polyline points="4 17 10 11 4 5" />
+                    <line x1="12" y1="19" x2="20" y2="19" />
+                  </svg>
+                </div>
+                <h3 class="fstrip-title" data-i18n="features.takeover.title">Universal LLM CLI Takeover</h3>
+                <p class="fstrip-desc" data-i18n="features.takeover.desc">Stop hunting for hidden config files. Clipal
+                  natively patches <code>~/.claude/settings.json</code> and standard configuration files, transforming
+                  into a zero-configuration local reverse proxy for Claude Code, AI CLI tools, and Desktop apps without
+                  env-var pollution.
+                </p>
+                <div class="fstrip-tags" aria-label="Supported tools">
+                  <span class="ftag">Claude Code</span>
+                  <span class="ftag">Codex CLI</span>
+                  <span class="ftag">Gemini CLI</span>
+                  <span class="ftag">Aider</span>
+                  <span class="ftag">Continue</span>
+                  <span class="ftag">Goose</span>
+                </div>
+              </div>
+              <div class="fstrip-visual">
+                <div class="fstrip-screenshot-frame">
+                  <img src="assets/screenshots/webui-cli-takeover.png"
+                    alt="Clipal Web UI interface showing universal one-click CLI takeover for Claude Code, Codex, and Gemini with automated setting.json patching"
+                    loading="lazy">
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div class="fstrip-sep" aria-hidden="true"></div>
+
+          <!-- 02 Bulletproof Failover -->
+          <article class="fstrip fstrip-rev reveal" id="feature-failover">
+            <span class="fstrip-num" aria-hidden="true">02</span>
+            <div class="fstrip-content">
+              <div class="fstrip-visual">
+                <div class="fv-diagram" aria-hidden="true">
+                  <!-- Animated SVG Diagram -->
+                  <div style="width: 100%; max-width: 600px; margin: 0 auto; padding-bottom: 20px;">
+                    <svg viewBox="0 0 600 180" xmlns="http://www.w3.org/2000/svg"
+                      style="font-family: var(--font-mono, monospace); width: 100%; height: auto; display: block;">
+                      <defs>
+                        <style>
+                          .svg-bg {
+                            fill: rgba(0, 0, 0, 0.4);
+                            rx: 8;
+                            stroke: rgba(255, 255, 255, 0.08);
+                            stroke-width: 1;
+                          }
+
+                          .svg-text {
+                            fill: #a0a0a0;
+                            font-size: 11px;
+                            text-anchor: middle;
+                            alignment-baseline: middle;
+                          }
+
+                          .svg-label {
+                            fill: #666;
+                            font-size: 10px;
+                            font-weight: bold;
+                            text-anchor: start;
+                          }
+
+                          .svg-key {
+                            fill: #1a1a1a;
+                            rx: 6;
+                            stroke: #333;
+                            stroke-width: 1;
+                            transition: all 0.2s;
+                          }
+
+                          .svg-err-text {
+                            fill: #ef4444;
+                            font-size: 9px;
+                            opacity: 0;
+                            font-weight: bold;
+                            text-anchor: middle;
+                          }
+
+                          .svg-ok-text {
+                            fill: #10b981;
+                            font-size: 9px;
+                            opacity: 0;
+                            font-weight: bold;
+                            text-anchor: middle;
+                          }
+
+                          .svg-arrow {
+                            stroke: rgba(255, 255, 255, 0.15);
+                            stroke-width: 1.5;
+                            fill: none;
+                            stroke-linejoin: round;
+                          }
+
+                          .dot {
+                            fill: var(--gold, #d4af37);
+                            filter: drop-shadow(0 0 4px #d4af37);
+                          }
+
+                          @keyframes mDot1 {
+
+                            0%,
+                            100% {
+                              opacity: 0;
+                            }
+
+                            5% {
+                              transform: translate(100px, 67px);
+                              opacity: 1;
+                            }
+
+                            15% {
+                              transform: translate(160px, 67px);
+                              opacity: 1;
+                            }
+
+                            16% {
+                              opacity: 0;
+                            }
+                          }
+
+                          @keyframes mDot2 {
+
+                            0%,
+                            100% {
+                              opacity: 0;
+                            }
+
+                            25% {
+                              transform: translate(210px, 85px);
+                              opacity: 0;
+                            }
+
+                            26% {
+                              transform: translate(210px, 85px);
+                              opacity: 1;
+                            }
+
+                            35% {
+                              transform: translate(210px, 110px);
+                              opacity: 1;
+                            }
+
+                            36% {
+                              opacity: 0;
+                            }
+                          }
+
+                          @keyframes mDot3 {
+
+                            0%,
+                            100% {
+                              opacity: 0;
+                            }
+
+                            45% {
+                              transform: translate(260px, 127px);
+                              opacity: 0;
+                            }
+
+                            46% {
+                              transform: translate(260px, 127px);
+                              opacity: 1;
+                            }
+
+                            52% {
+                              transform: translate(330px, 127px);
+                            }
+
+                            56% {
+                              transform: translate(330px, 97px);
+                            }
+
+                            65% {
+                              transform: translate(415px, 97px);
+                              opacity: 1;
+                            }
+
+                            66% {
+                              opacity: 0;
+                            }
+                          }
+
+                          @keyframes flashRed1 {
+
+                            16%,
+                            26% {
+                              stroke: #ef4444;
+                              fill: rgba(239, 68, 68, 0.1);
+                            }
+                          }
+
+                          @keyframes showErr1 {
+
+                            16%,
+                            26% {
+                              opacity: 1;
+                            }
+                          }
+
+                          @keyframes flashRed2 {
+
+                            36%,
+                            46% {
+                              stroke: #ef4444;
+                              fill: rgba(239, 68, 68, 0.1);
+                            }
+                          }
+
+                          @keyframes showErr2 {
+
+                            36%,
+                            46% {
+                              opacity: 1;
+                            }
+                          }
+
+                          @keyframes flashGreen {
+
+                            66%,
+                            86% {
+                              stroke: #10b981;
+                              fill: rgba(16, 185, 129, 0.1);
+                            }
+                          }
+
+                          @keyframes showOk {
+
+                            66%,
+                            86% {
+                              opacity: 1;
+                            }
+                          }
+
+                          .anim-dot1 {
+                            animation: mDot1 6s infinite linear;
+                          }
+
+                          .anim-dot2 {
+                            animation: mDot2 6s infinite linear;
+                          }
+
+                          .anim-dot3 {
+                            animation: mDot3 6s infinite linear;
+                          }
+
+                          .anim-key1 {
+                            animation: flashRed1 6s infinite linear;
+                          }
+
+                          .anim-err1 {
+                            animation: showErr1 6s infinite linear;
+                          }
+
+                          .anim-key2 {
+                            animation: flashRed2 6s infinite linear;
+                          }
+
+                          .anim-err2 {
+                            animation: showErr2 6s infinite linear;
+                          }
+
+                          .anim-key3 {
+                            animation: flashGreen 6s infinite linear;
+                          }
+
+                          .anim-ok {
+                            animation: showOk 6s infinite linear;
+                          }
+                        </style>
+                        <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                          <polygon points="0 0, 8 4, 0 8" fill="rgba(255,255,255,0.2)" />
+                        </marker>
+                      </defs>
+
+                      <!-- App Req -->
+                      <rect class="svg-bg" x="20" y="52" width="80" height="30" />
+                      <text class="svg-text" x="60" y="68">App Req</text>
+
+                      <!-- Provider A Boundary -->
+                      <rect class="svg-bg" x="130" y="20" width="160" height="150" stroke-dasharray="4"
+                        fill="rgba(255,255,255,0.01)" />
+                      <text class="svg-label" x="140" y="40">PROVIDER A</text>
+
+                      <!-- Keys in Prov A -->
+                      <rect class="svg-key anim-key1" x="160" y="50" width="100" height="35" />
+                      <text class="svg-text" x="210" y="63">Key 1</text>
+                      <text class="svg-err-text anim-err1" x="210" y="78">429 Limit</text>
+
+                      <rect class="svg-key anim-key2" x="160" y="110" width="100" height="35" />
+                      <text class="svg-text" x="210" y="123">Key 2</text>
+                      <text class="svg-err-text anim-err2" x="210" y="138">429 Limit</text>
+
+                      <!-- Provider B Boundary -->
+                      <rect class="svg-bg" x="390" y="40" width="170" height="110" stroke-dasharray="4"
+                        fill="rgba(255,255,255,0.01)" />
+                      <text class="svg-label" x="400" y="60">PROVIDER B (Fallback)</text>
+
+                      <!-- Keys in Prov B -->
+                      <rect class="svg-key anim-key3" x="420" y="80" width="120" height="35" />
+                      <text class="svg-text" x="480" y="93">Key 1</text>
+                      <text class="svg-ok-text anim-ok" x="480" y="108">OK (Sticky)</text>
+
+                      <!-- Connections -->
+                      <path class="svg-arrow" d="M 100 67 L 155 67" marker-end="url(#arrowhead)" />
+                      <path class="svg-arrow" d="M 210 85 L 210 105" marker-end="url(#arrowhead)" />
+                      <path class="svg-arrow" d="M 260 127 L 330 127 L 330 97 L 415 97" marker-end="url(#arrowhead)" />
+
+                      <!-- The Traveling Packets -->
+                      <circle class="dot anim-dot1" cx="0" cy="0" r="3.5" />
+                      <circle class="dot anim-dot2" cx="0" cy="0" r="3.5" />
+                      <circle class="dot anim-dot3" cx="0" cy="0" r="3.5" />
+                    </svg>
+                  </div>
+                  <div class="fv-stats">
+                    <div class="fv-stat"><b>0</b><span data-i18n="features.failover.stat1">Dropped Requests</span></div>
+                    <div class="fv-stat"><b>∞</b><span data-i18n="features.failover.stat2">Keys per Provider</span>
+                    </div>
+                    <div class="fv-stat"><b>Auto</b><span data-i18n="features.failover.stat3">Failover</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="fstrip-text">
+                <div class="fstrip-icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    <polyline points="9 12 11 14 15 10" />
+                  </svg>
+                </div>
+                <h3 class="fstrip-title" data-i18n="features.failover.title">Smart 429 Bypass & Failover Routing</h3>
+                <p class="fstrip-desc" data-i18n="features.failover.desc">Conquer strict 3rd-party API rate limits.
+                  Clipal manages shared token pools, instantly detecting 429 errors to gracefully rotate keys or
+                  failover to backup providers—all while preserving your contextual session state.</p>
+              </div>
+            </div>
+          </article>
+
+          <div class="fstrip-sep" aria-hidden="true"></div>
+
+          <!-- 03 No Docker, No Python -->
+          <article class="fstrip reveal" id="feature-simple">
+            <span class="fstrip-num" aria-hidden="true">03</span>
+            <div class="fstrip-content">
+              <div class="fstrip-text">
+                <div class="fstrip-icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path
+                      d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                  </svg>
+                </div>
+                <h3 class="fstrip-title" data-i18n="features.simple.title">Lightweight Single-Binary LLM Gateway</h3>
+                <p class="fstrip-desc" data-i18n="features.simple.desc">Unlike heavy Python proxies (like LiteLLM) or
+                  complex Docker deployments, Clipal is a high-performance, zero-dependency API Gateway compiled in Go
+                  for macOS, Linux, and Windows. Download. Executable. Proxy active.</p>
+              </div>
+              <div class="fstrip-visual">
+                <div class="cmp-viz" aria-hidden="true">
+                  <div class="cmp-block cmp-bad">
+                    <div class="cmp-label" data-i18n="features.simple.other">❌ Other Solutions</div>
+                    <div class="cmp-code">pip install litellm
+                      docker-compose up -d
+                      <span class="t-cmt"># configure ports, env vars...</span>
+                      <span class="t-cmt"># 20+ minutes later...</span>
+                    </div>
+                  </div>
+                  <div class="cmp-vs" data-i18n="features.simple.vs">vs</div>
+                  <div class="cmp-block cmp-ok">
+                    <div class="cmp-label">✓ Clipal</div>
+                    <div class="cmp-code"><span class="t-cmd">chmod +x</span> clipal
+                      <span class="t-cmd">clipal service start</span>
+                      <span class="t-ok">✓ Running in 10 seconds</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== HOW IT WORKS / BLUEPRINT ===================== -->
+    <section id="how-it-works" aria-labelledby="hiw-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <div class="section-eyebrow" data-i18n="hiw.eyebrow">Behind the Magic</div>
+          <h2 id="hiw-heading" class="section-title" data-i18n="hiw.title">The Clipal Blueprint</h2>
+          <p class="section-sub" data-i18n="hiw.sub">How we engineer stability: zero config loss, zero auth loops, and
+            unified token pools.</p>
+        </div>
+
+        <div class="blueprint-container reveal">
+          <style>
+            .blueprint-container {
+              margin-top: 4rem;
+              display: grid;
+              grid-template-columns: 1fr;
+              gap: 2rem;
+              position: relative;
+            }
+
+            @media(min-width: 900px) {
+              .blueprint-container {
+                grid-template-columns: 240px 1fr 240px;
+                align-items: center;
+              }
+            }
+
+            .bp-col {
+              display: flex;
+              flex-direction: column;
+              gap: 1.5rem;
+              position: relative;
+              z-index: 2;
+            }
+
+            .bp-core {
+              background: rgba(30, 30, 30, 0.6);
+              backdrop-filter: blur(16px);
+              -webkit-backdrop-filter: blur(16px);
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              border-radius: 24px;
+              padding: 2.5rem;
+              box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+              display: flex;
+              flex-direction: column;
+              gap: 2rem;
+              position: relative;
+              overflow: hidden;
+            }
+
+            .bp-core::before {
+              content: '';
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              height: 1px;
+              background: linear-gradient(90deg, transparent, var(--gold), transparent);
+              opacity: 0.6;
+            }
+
+            .bp-item {
+              background: var(--bg-card);
+              border: 1px solid rgba(255, 255, 255, 0.05);
+              border-radius: 12px;
+              padding: 1.5rem;
+              transition: all 0.3s ease;
+            }
+
+            .bp-item:hover {
+              border-color: var(--gold);
+              transform: translateY(-2px);
+              box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            }
+
+            .bp-core-item {
+              background: rgba(10, 10, 10, 0.4);
+              border: 1px solid rgba(255, 255, 255, 0.06);
+              border-radius: 16px;
+              padding: 1.5rem;
+              position: relative;
+              transition: transform 0.3s ease, border-color 0.3s ease;
+              overflow: hidden;
+            }
+
+            .bp-core-item:hover {
+              transform: scale(1.02);
+              border-color: rgba(168, 85, 247, 0.4);
+            }
+
+            .bp-core-item::after {
+              content: '';
+              position: absolute;
+              top: 0;
+              right: 100%;
+              bottom: 0;
+              width: 60px;
+              background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.1), transparent);
+              animation: bpScanline 3s linear infinite;
+            }
+
+            @keyframes bpScanline {
+              0% {
+                right: 100%;
+                opacity: 0;
+              }
+
+              10% {
+                opacity: 1;
+              }
+
+              90% {
+                opacity: 1;
+              }
+
+              100% {
+                right: -60px;
+                opacity: 0;
+              }
+            }
+
+            .bp-label {
+              font-family: var(--font-mono);
+              font-size: 0.75rem;
+              color: var(--gold);
+              text-transform: uppercase;
+              letter-spacing: 1px;
+              margin-bottom: 0.75rem;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+            }
+
+            .bp-pulse {
+              width: 6px;
+              height: 6px;
+              border-radius: 50%;
+              background: var(--gold);
+              box-shadow: 0 0 8px var(--gold);
+              animation: bpPulse 2s infinite;
+            }
+
+            @keyframes bpPulse {
+              0% {
+                opacity: 1;
+                transform: scale(1);
+              }
+
+              50% {
+                opacity: 0.5;
+                transform: scale(1.3);
+              }
+
+              100% {
+                opacity: 1;
+                transform: scale(1);
+              }
+            }
+
+            .bp-title {
+              font-size: 1.1rem;
+              font-weight: 600;
+              color: var(--text-base);
+              margin-bottom: 0.5rem;
+            }
+
+            .bp-desc {
+              font-size: 0.85rem;
+              color: var(--text-dim);
+              line-height: 1.6;
+            }
+
+            /* Flow Lines */
+            .bp-flow {
+              position: absolute;
+              top: 50%;
+              width: 100%;
+              height: 2px;
+              transform: translateY(-50%);
+              z-index: 1;
+              display: none;
+            }
+
+            @media(min-width: 900px) {
+              .bp-flow {
+                display: block;
+              }
+            }
+
+            .bp-fline {
+              position: absolute;
+              top: 0;
+              height: 100%;
+              background: rgba(255, 255, 255, 0.05);
+            }
+
+            .bp-fline.left {
+              left: 240px;
+              right: calc(100% - 240px - 2rem);
+              width: auto;
+            }
+
+            .bp-fline.right {
+              left: auto;
+              right: 240px;
+              width: 4rem;
+            }
+
+            .bp-dot {
+              position: absolute;
+              top: -2px;
+              width: 6px;
+              height: 6px;
+              background: var(--gold);
+              border-radius: 50%;
+              box-shadow: 0 0 10px var(--gold);
+              animation: bpFlowAnim 2s infinite linear;
+            }
+
+            .bp-fline.left .bp-dot {
+              animation-delay: 0s;
+            }
+
+            .bp-fline.right .bp-dot {
+              animation-delay: 0.5s;
+              background: #3b82f6;
+              box-shadow: 0 0 10px #3b82f6;
+            }
+
+            @keyframes bpFlowAnim {
+              0% {
+                left: 0;
+                opacity: 0;
+              }
+
+              10% {
+                opacity: 1;
+              }
+
+              90% {
+                opacity: 1;
+              }
+
+              100% {
+                left: 100%;
+                opacity: 0;
+              }
+            }
+
+            /* Mini Terminals */
+            .bp-term {
+              background: #000;
+              border-radius: 8px;
+              padding: 12px;
+              font-family: var(--font-mono);
+              font-size: 0.75rem;
+              margin-top: 1rem;
+              color: #a0a0a0;
+              border: 1px solid #222;
+              overflow-x: auto;
+            }
+
+            .bp-term .diff-add {
+              color: #4ec9b0;
+            }
+
+            .bp-term .str {
+              color: #ce9178;
+            }
+
+            /* Flowcharts */
+            .fc-wrap {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              margin-top: 1rem;
+              font-family: var(--font-mono);
+              font-size: 0.75rem;
+              background: rgba(0, 0, 0, 0.3);
+              padding: 12px;
+              border-radius: 8px;
+              border: 1px dashed rgba(255, 255, 255, 0.1);
+              overflow-x: auto;
+            }
+
+            .fc-node {
+              padding: 4px 8px;
+              background: #222;
+              border-radius: 4px;
+              color: #ccc;
+              white-space: nowrap;
+            }
+
+            .fc-box {
+              padding: 4px 8px;
+              background: rgba(168, 85, 247, 0.15);
+              border: 1px solid rgba(168, 85, 247, 0.4);
+              border-radius: 4px;
+              color: #e9d5ff;
+              white-space: nowrap;
+            }
+
+            .fc-arr {
+              color: var(--gold);
+              font-weight: bold;
+            }
+
+            .fc-pool {
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+              border-left: 2px solid #3b82f6;
+              padding-left: 8px;
+            }
+
+            .fc-key {
+              font-size: 0.65rem;
+              padding: 2px 6px;
+              background: #111;
+              border-radius: 4px;
+              color: #888;
+              white-space: nowrap;
+            }
+
+            .fc-key.active {
+              background: rgba(59, 130, 246, 0.2);
+              color: #93c5fd;
+              border: 1px solid rgba(59, 130, 246, 0.5);
+            }
+          </style>
+
+          <!-- Animation Path Lines -->
+          <div class="bp-flow" aria-hidden="true">
+            <div class="bp-fline left">
+              <div class="bp-dot"></div>
+            </div>
+            <div class="bp-fline right">
+              <div class="bp-dot"></div>
+            </div>
+          </div>
+
+          <!-- Left: Inputs -->
+          <div class="bp-col">
+            <div class="bp-item">
+              <div class="bp-title" data-i18n="hiw.client.cli.title">AI CLI Tools</div>
+              <div class="bp-desc" data-i18n="hiw.client.cli">Claude Code / Codex / Gemini CLI. Fragile local config
+                files securely patched.</div>
+            </div>
+            <div class="bp-item">
+              <div class="bp-title" data-i18n="hiw.client.apps.title">AI Desktop Apps</div>
+              <div class="bp-desc" data-i18n="hiw.client.apps">Cherry Studio / OpenClaw / Chatwise. Unified behind one
+                stable gateway endpoint.</div>
+            </div>
+          </div>
+
+          <!-- Center: Core Container -->
+          <div class="bp-core">
+            <!-- Core 1 -->
+            <div class="bp-core-item">
+              <div class="bp-label">
+                <div class="bp-pulse" style="background:var(--green);box-shadow:0 0 8px var(--green)"></div> <span
+                  data-i18n="hiw.core1.tag">AST-Merge Engine</span>
+              </div>
+              <div class="bp-title" data-i18n="hiw.core1.title">Non-Destructive Takeover</div>
+              <div class="bp-desc" data-i18n="hiw.core1.desc">Instead of overwriting settings.json, we parse the JSON
+                AST and surgically patch ANTHROPIC_BASE_URL. Your enabledPlugins and custom env variables remain 100%
+                untouched.</div>
+              <div class="bp-term" aria-hidden="true">
+                <div>"env": {</div>
+                <div class="diff-add">+ "ANTHROPIC_BASE_URL": <span class="str">"http://127.0.0.1:3333/clipal"</span>
+                </div>
+                <div>}</div>
+              </div>
+            </div>
+
+            <!-- Core 2 -->
+            <div class="bp-core-item">
+              <div class="bp-label">
+                <div class="bp-pulse" style="background:var(--gold);box-shadow:0 0 8px var(--gold)"></div> <span
+                  data-i18n="hiw.core2.tag">Protocol Normalizer</span>
+              </div>
+              <div class="bp-title" data-i18n="hiw.core2.title">Socket-Level Header Scrubbing</div>
+              <div class="bp-desc" data-i18n="hiw.core2.desc">Tired of Login Loops? Clipal actively scrubs conflicting
+                Host headers and injects accurate API tokens at the proxy layer, enabling flawless AWS Bedrock / Google
+                Vertex connections.</div>
+              <svg viewBox="0 0 300 40" style="width:100%; height:40px; margin-top:1.2rem; display:block;"
+                aria-hidden="true">
+                <style>
+                  .mini-bg {
+                    fill: rgba(0, 0, 0, 0.5);
+                    rx: 4;
+                    stroke: rgba(255, 255, 255, 0.1);
+                    stroke-width: 1;
+                  }
+
+                  .mini-txt {
+                    fill: #a0a0a0;
+                    font-family: var(--font-mono);
+                    font-size: 9px;
+                    alignment-baseline: middle;
+                    text-anchor: middle;
+                  }
+
+                  .mini-arr {
+                    stroke: rgba(255, 255, 255, 0.2);
+                    stroke-width: 1.5;
+                    stroke-dasharray: 3;
+                    fill: none;
+                  }
+
+                  @keyframes miniPack1 {
+                    0% {
+                      transform: translateX(50px);
+                      opacity: 0;
+                    }
+
+                    10% {
+                      opacity: 1;
+                    }
+
+                    40% {
+                      transform: translateX(95px);
+                      opacity: 1;
+                    }
+
+                    50% {
+                      opacity: 0;
+                    }
+
+                    100% {
+                      opacity: 0;
+                    }
+                  }
+
+                  @keyframes miniPack2 {
+
+                    0%,
+                    40% {
+                      opacity: 0;
+                    }
+
+                    50% {
+                      transform: translateX(180px);
+                      opacity: 0;
+                    }
+
+                    60% {
+                      opacity: 1;
+                    }
+
+                    90% {
+                      transform: translateX(225px);
+                      opacity: 1;
+                    }
+
+                    100% {
+                      opacity: 0;
+                    }
+                  }
+
+                  @keyframes scrubPulse {
+
+                    30%,
+                    60% {
+                      stroke: rgba(168, 85, 247, 0.7);
+                      box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+                    }
+                  }
+
+                  .m-dot1 {
+                    animation: miniPack1 3s infinite linear;
+                    fill: #ef4444;
+                  }
+
+                  .m-dot2 {
+                    animation: miniPack2 3s infinite linear;
+                    fill: #10b981;
+                  }
+
+                  .m-scrub {
+                    animation: scrubPulse 3s infinite linear;
+                  }
+                </style>
+                <rect class="mini-bg" x="0" y="5" width="50" height="30" />
+                <text class="mini-txt" x="25" y="21" fill="#dcdcaa">Client</text>
+
+                <path class="mini-arr" d="M 50 20 L 95 20" />
+
+                <rect class="mini-bg m-scrub" x="95" y="5" width="85" height="30" stroke="rgba(168,85,247,0.3)"
+                  fill="rgba(168,85,247,0.15)" />
+                <text class="mini-txt" x="137.5" y="16" fill="#e9d5ff">Scrub 401</text>
+                <text class="mini-txt" x="137.5" y="28" fill="#e9d5ff">Inject Sig</text>
+
+                <path class="mini-arr" d="M 180 20 L 225 20" />
+
+                <rect class="mini-bg" x="225" y="5" width="60" height="30" />
+                <text class="mini-txt" x="255" y="21" fill="#ce9178">Upstream</text>
+
+                <circle class="m-dot1" cx="0" cy="20" r="2.5" />
+                <circle class="m-dot2" cx="0" cy="20" r="2.5" />
+              </svg>
+            </div>
+
+            <!-- Core 3 -->
+            <div class="bp-core-item">
+              <div class="bp-label">
+                <div class="bp-pulse" style="background:#3b82f6;box-shadow:0 0 8px #3b82f6"></div> <span
+                  data-i18n="hiw.core3.tag">Routing Multi-Pool</span>
+              </div>
+              <div class="bp-title" data-i18n="hiw.core3.title">Intelligent 429 & Sticky Sessions</div>
+              <div class="bp-desc" data-i18n="hiw.core3.desc">Built for 3rd-party APIs. When a single Key hits 429 rate
+                limits, Clipal instantly diverts to the next available Key within the same Provider, while enforcing
+                Context Sticky Sessions so conversations never lose state.</div>
+              <svg viewBox="0 0 300 65" style="width:100%; height:65px; margin-top:1.2rem; display:block;"
+                aria-hidden="true">
+                <style>
+                  @keyframes bpPath1 {
+                    0% {
+                      transform: translate(75px, 20px);
+                      opacity: 1;
+                    }
+
+                    20% {
+                      transform: translate(120px, 20px);
+                      opacity: 1;
+                    }
+
+                    25% {
+                      transform: translate(120px, 20px);
+                      opacity: 0;
+                    }
+
+                    100% {
+                      opacity: 0;
+                    }
+                  }
+
+                  @keyframes bpFlashR {
+
+                    20%,
+                    30% {
+                      stroke: #ef4444;
+                      fill: rgba(239, 68, 68, 0.2);
+                    }
+                  }
+
+                  @keyframes bpPath2 {
+
+                    0%,
+                    40% {
+                      opacity: 0;
+                    }
+
+                    45% {
+                      transform: translate(125px, 30px);
+                      opacity: 1;
+                    }
+
+                    65% {
+                      transform: translate(125px, 45px);
+                      opacity: 1;
+                    }
+
+                    70% {
+                      opacity: 0;
+                    }
+
+                    100% {
+                      opacity: 0;
+                    }
+                  }
+
+                  @keyframes bpFlashG {
+
+                    65%,
+                    85% {
+                      stroke: #10b981;
+                      fill: rgba(16, 185, 129, 0.2);
+                    }
+                  }
+
+                  .b-dot1 {
+                    animation: bpPath1 3s infinite linear;
+                    fill: #ef4444;
+                  }
+
+                  .b-dot2 {
+                    animation: bpPath2 3s infinite linear;
+                    fill: #10b981;
+                  }
+
+                  .b-k1 {
+                    animation: bpFlashR 3s infinite linear;
+                  }
+
+                  .b-k2 {
+                    animation: bpFlashG 3s infinite linear;
+                  }
+                </style>
+                <rect class="mini-bg" x="0" y="5" width="75" height="30" />
+                <text class="mini-txt" x="37.5" y="21">Provider A</text>
+
+                <path class="mini-arr" d="M 75 20 L 120 20" />
+                <path class="mini-arr" d="M 125 30 L 125 40" />
+
+                <rect class="mini-bg b-k1" x="120" y="5" width="100" height="20" />
+                <text class="mini-txt" x="170" y="16" fill="#ef4444">Key 1 (429)</text>
+
+                <rect class="mini-bg b-k2" x="100" y="40" width="120" height="20" />
+                <text class="mini-txt" x="160" y="51" fill="#10b981">Key 2 (Sticky)</text>
+
+                <circle class="b-dot1" cx="0" cy="0" r="2.5" />
+                <circle class="b-dot2" cx="0" cy="0" r="2.5" />
+              </svg>
+            </div>
+
+            <!-- Core 4 -->
+            <div class="bp-core-item">
+              <div class="bp-label">
+                <div class="bp-pulse" style="background:#eab308;box-shadow:0 0 8px #eab308"></div> <span
+                  data-i18n="hiw.core4.tag">Hierarchical Failover</span>
+              </div>
+              <div class="bp-title" data-i18n="hiw.core4.title">Multi-Provider Fallback</div>
+              <div class="bp-desc" data-i18n="hiw.core4.desc">Total endpoint outage? If a Primary Provider exhausts all
+                keys or goes offline, priority-based hierarchical routing seamlessly cascades traffic to your Fallback
+                Provider. Zero downtime.</div>
+              <svg viewBox="0 0 300 40" style="width:100%; height:40px; margin-top:1.2rem; display:block;"
+                aria-hidden="true">
+                <style>
+                  @keyframes hfPath1 {
+                    0% {
+                      transform: translateX(60px);
+                      opacity: 1;
+                    }
+
+                    25% {
+                      transform: translateX(100px);
+                      opacity: 1;
+                    }
+
+                    30% {
+                      opacity: 0;
+                    }
+
+                    100% {
+                      opacity: 0;
+                    }
+                  }
+
+                  @keyframes hfPath2 {
+
+                    0%,
+                    45% {
+                      opacity: 0;
+                    }
+
+                    50% {
+                      transform: translateX(190px);
+                      opacity: 1;
+                    }
+
+                    75% {
+                      transform: translateX(230px);
+                      opacity: 1;
+                    }
+
+                    80% {
+                      opacity: 0;
+                    }
+
+                    100% {
+                      opacity: 0;
+                    }
+                  }
+
+                  @keyframes hfBad {
+
+                    25%,
+                    45% {
+                      stroke: #ef4444;
+                      fill: rgba(239, 68, 68, 0.2);
+                    }
+                  }
+
+                  @keyframes hfOk {
+
+                    75%,
+                    95% {
+                      stroke: #10b981;
+                      fill: rgba(16, 185, 129, 0.2);
+                    }
+                  }
+
+                  .c-dot1 {
+                    animation: hfPath1 3s infinite linear;
+                    fill: #ef4444;
+                  }
+
+                  .c-dot2 {
+                    animation: hfPath2 3s infinite linear;
+                    fill: #10b981;
+                  }
+
+                  .c-b1 {
+                    animation: hfBad 3s infinite linear;
+                  }
+
+                  .c-b2 {
+                    animation: hfOk 3s infinite linear;
+                  }
+                </style>
+                <rect class="mini-bg" x="0" y="5" width="60" height="30" />
+                <text class="mini-txt" x="30" y="21">App Req</text>
+
+                <path class="mini-arr" d="M 60 20 L 100 20" />
+
+                <rect class="mini-bg c-b1" x="100" y="5" width="90" height="30" />
+                <text class="mini-txt" x="145" y="21">Pri 1 (Dead)</text>
+
+                <path class="mini-arr" d="M 190 20 L 230 20" />
+
+                <rect class="mini-bg c-b2" x="230" y="5" width="70" height="30" />
+                <text class="mini-txt" x="265" y="21">Fallback 2</text>
+
+                <circle class="c-dot1" cx="0" cy="20" r="2.5" />
+                <circle class="c-dot2" cx="0" cy="20" r="2.5" />
+              </svg>
+            </div>
+          </div>
+
+          <!-- Right: Upstreams -->
+          <div class="bp-col">
+            <div class="bp-item">
+              <div class="bp-title">Anthropic / Bedrock</div>
+              <div class="bp-desc" data-i18n="hiw.out.claude">100% Protocol match. Zero authentication loops.</div>
+            </div>
+            <div class="bp-item">
+              <div class="bp-title">OpenAI / Custom Models</div>
+              <div class="bp-desc" data-i18n="hiw.out.openai">High-performance Codex compatibility with load balancing.
+              </div>
+            </div>
+            <div class="bp-item">
+              <div class="bp-title">Google Vertex / AI Studio</div>
+              <div class="bp-desc" data-i18n="hiw.out.gemini">Rotating quotas softly, bypassing RPS limits
+                transparently.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== COMPARISON & CAPABILITIES ===================== -->
+    <section id="why-clipal" aria-labelledby="why-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <div class="section-eyebrow" data-i18n="why.eyebrow">The Competitive Edge</div>
+          <h2 id="why-heading" class="section-title" data-i18n="why.title">Why Developers Switch to Clipal</h2>
+          <p class="section-sub" data-i18n="why.sub">Beyond simple proxying — Clipal is the infrastructure that
+            cc-switch and ccNexus users have been waiting for.</p>
+        </div>
+
+        <div class="comparison-grid reveal">
+          <!-- Comparison Table -->
+          <div class="comp-table-wrap glass-card">
+            <table class="comp-table" role="grid">
+              <thead>
+                <tr>
+                  <th data-i18n="comp.feature">Feature / Tool</th>
+                  <th>cc-switch</th>
+                  <th>ccNexus</th>
+                  <th class="col-clipal">Clipal</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td data-i18n="comp.binary">Binary-only (No Docker)</td>
+                  <td data-i18n="comp.val.binary.ccs">✗ (Script)</td>
+                  <td data-i18n="comp.val.ok">✓</td>
+                  <td class="col-clipal" data-i18n="comp.val.ok">✓</td>
+                </tr>
+                <tr>
+                  <td data-i18n="comp.takeover">Claude / Codex / Gemini Takeover</td>
+                  <td data-i18n="comp.val.limited">Limited</td>
+                  <td data-i18n="comp.val.ok">✓</td>
+                  <td class="col-clipal" data-i18n="comp.val.unified">Unified</td>
+                </tr>
+                <tr>
+                  <td data-i18n="comp.pools">API Provider Multi-key Pools</td>
+                  <td data-i18n="comp.val.err">✗</td>
+                  <td data-i18n="comp.val.ok">✓</td>
+                  <td class="col-clipal" data-i18n="comp.val.bulletproof">Bulletproof</td>
+                </tr>
+                <tr>
+                  <td data-i18n="comp.logs">Universal Base-url Support</td>
+                  <td data-i18n="comp.val.ok">✓</td>
+                  <td data-i18n="comp.val.ok">✓</td>
+                  <td class="col-clipal" data-i18n="comp.val.metrics">✓ (w/ Metrics)</td>
+                </tr>
+                <tr>
+                  <td data-i18n="comp.non-destructive">Non-destructive Config Merge</td>
+                  <td data-i18n="comp.val.overwrites">✗ (Overwrites)</td>
+                  <td data-i18n="comp.val.ok">✓</td>
+                  <td class="col-clipal" data-i18n="comp.val.safeguarded">✓ (Safeguarded)</td>
+                </tr>
+                <tr>
+                  <td data-i18n="comp.auth-emulation">Protocol Auth Emulation</td>
+                  <td data-i18n="comp.val.limited">Limited</td>
+                  <td data-i18n="comp.val.err">✗</td>
+                  <td class="col-clipal" data-i18n="comp.val.no-loops">✓ (No Loops)</td>
+                </tr>
+                <tr>
+                  <td data-i18n="comp.diagnostics">Real-time Flow Monitoring</td>
+                  <td data-i18n="comp.val.blackbox">✗ (Blackbox)</td>
+                  <td data-i18n="comp.val.ok">✓</td>
+                  <td class="col-clipal" data-i18n="comp.val.one-click">✓ (One-click)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Deep Integration Spotlights -->
+          <div class="why-highlights-header reveal">
+            <h5 data-i18n="why.highlights.title">Specialized Tool Optimizations</h5>
+          </div>
+          <div class="why-cards reveal">
+            <article class="why-card">
+              <div class="why-card-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+              </div>
+              <div class="why-card-tag">Deep Integration</div>
+              <h4 data-i18n="why.claude.title">Claude Code Proxy: Native & Powerful</h4>
+              <p data-i18n="why.claude.desc">Directly hijacking <code>ANTHROPIC_BASE_URL</code> without environment
+                pollution. Perfect for relaying requests to Bedrock, Vertex AI, or any 3rd-party Claude Mirror without
+                protocol header errors.</p>
+            </article>
+
+            <article class="why-card">
+              <div class="why-card-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+              </div>
+              <div class="why-card-tag">Quota Management</div>
+              <h4 data-i18n="why.gemini.title">Gemini CLI: Bypass RPS Limits</h4>
+              <p data-i18n="why.gemini.desc">Distribute requests across multiple Google Gemini API keys. Automatically
+                fallback to Flash models via weighted pools when Pro quotas hit their ceiling.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== INSTALL GUIDE ===================== -->
+    <section id="install" aria-labelledby="install-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <div class="section-eyebrow" data-i18n="install.eyebrow">Quick Start</div>
+          <h2 id="install-heading" class="section-title" data-i18n="install.title">Up and Running Clipal in Minutes</h2>
+          <p class="section-sub" data-i18n="install.sub">Choose your preferred installation method.</p>
+        </div>
+
+        <div class="install-wrap reveal">
+          <div class="install-tabs-nav" role="tablist" aria-label="Install method">
+            <button class="itab active" role="tab" aria-selected="true" aria-controls="panel-ai" id="tab-ai"
+              data-tab="ai">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 8v4l3 3" />
+              </svg>
+              <span data-i18n="install.tab.ai">Let AI Install for Me</span>
+            </button>
+            <button class="itab" role="tab" aria-selected="false" aria-controls="panel-manual" id="tab-manual"
+              data-tab="manual">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                aria-hidden="true">
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+              <span data-i18n="install.tab.manual">Manual Install</span>
+            </button>
+          </div>
+
+          <!-- AI Install Panel -->
+          <div class="itab-panel active" id="panel-ai" role="tabpanel" aria-labelledby="tab-ai">
+            <p class="install-hint" data-i18n="install.ai.hint">Copy this prompt and paste it into <strong>Claude
+                Code</strong>, <strong>Aider</strong>, or <strong>Goose</strong> — it will handle the entire binary
+              installation and <code>PATH</code> setup for you:</p>
+            <div class="prompt-card">
+              <div class="prompt-header">
+                <span class="prompt-tag">PROMPT</span>
+                <button class="copy-btn" id="copy-ai-prompt">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                  <span data-i18n="install.copy">Copy</span>
+                </button>
+              </div>
+              <pre class="prompt-text" id="ai-prompt-content"></pre>
+            </div>
+          </div>
+
+          <!-- Manual Install Panel -->
+          <div class="itab-panel" id="panel-manual" role="tabpanel" aria-labelledby="tab-manual">
+            <div class="manual-steps">
+
+              <div class="mstep">
+                <div class="mstep-num">1</div>
+                <div class="mstep-body">
+                  <h4 class="mstep-title" data-i18n="install.step1.title">Download the Binary</h4>
+                  <div class="platform-tabs" id="install-ptabs" role="tablist">
+                    <button class="ptab active" role="tab" data-platform="mac-arm">macOS (Apple Silicon)</button>
+                    <button class="ptab" role="tab" data-platform="mac-intel">macOS (Intel)</button>
+                    <button class="ptab" role="tab" data-platform="linux-x64">Linux x86_64</button>
+                    <button class="ptab" role="tab" data-platform="linux-arm">Linux ARM64</button>
+                    <button class="ptab" role="tab" data-platform="windows">Windows</button>
+                  </div>
+                  <a href="https://github.com/lansespirit/Clipal/releases" target="_blank" rel="noopener noreferrer"
+                    class="btn-primary" id="manual-dl-btn" style="margin-top:12px;display:inline-flex">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      aria-hidden="true">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    <span id="manual-dl-text" data-i18n="install.step1.btn">Download Binary</span>
+                  </a>
+                </div>
+              </div>
+
+              <div class="mstep">
+                <div class="mstep-num">2</div>
+                <div class="mstep-body">
+                  <h4 class="mstep-title" data-i18n="install.step2.title">Move to PATH & Start</h4>
+                  <div class="code-block" style="margin-top:12px">
+                    <span class="t-cmt"># macOS / Linux</span><br>
+                    <span class="t-cmd">chmod +x</span> clipal-darwin-arm64<br>
+                    <span class="t-cmd">mv</span> clipal-darwin-arm64 /usr/local/bin/clipal<br>
+                    <span class="t-cmd">clipal service install</span><br>
+                    <span class="t-cmd">clipal service start</span><br>
+                    <span class="t-ok">✓ Running on http://127.0.0.1:3333</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mstep">
+                <div class="mstep-num">3</div>
+                <div class="mstep-body">
+                  <h4 class="mstep-title" data-i18n="install.step3.title">Open Web UI & Configure</h4>
+                  <p class="mstep-desc" data-i18n="install.step3.desc">Visit <code>http://127.0.0.1:3333</code> to add
+                    your API keys, apply CLI Takeover, and manage providers.</p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== FAQ ===================== -->
+    <section id="faq" aria-labelledby="faq-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <div class="section-eyebrow" data-i18n="faq.eyebrow">F.A.Q.</div>
+          <h2 id="faq-heading" class="section-title" data-i18n="faq.title">Frequently Asked Questions for Clipal</h2>
+        </div>
+
+        <div class="faq-grid reveal">
+          <div class="faq-item glass-card">
+            <h4 class="faq-q" data-i18n="faq.q1">Is Clipal a local SaaS or cloud proxy?</h4>
+            <p class="faq-a" data-i18n="faq.a1">Neither. Clipal is a standalone <strong>local binary</strong>. Your API
+              keys are stored in an encrypted <code>config.json</code> on your own machine. Zero cloud storage, zero
+              data leakage.</p>
+          </div>
+          <div class="faq-item glass-card">
+            <h4 class="faq-q" data-i18n="faq.q2">How is Clipal different from cc-switch?</h4>
+            <p class="faq-a" data-i18n="faq.a2">While cc-switch manages multiple configs, Clipal is a
+              <strong>high-performance gateway</strong> that supports complex multi-key token pools, deep config
+              injection for <code>clauderc</code>, and real-time observability.
+            </p>
+          </div>
+          <div class="faq-item glass-card">
+            <h4 class="faq-q" data-i18n="faq.q3">Does Clipal solve "Invalid API Key" for Bedrock?</h4>
+            <p class="faq-a" data-i18n="faq.a3">Yes. Most proxies break when talking to Bedrock/Vertex via Claude Code
+              due to header strictness. Clipal provides <strong>native protocol emulation</strong> to fix these issues
+              at the socket level.</p>
+          </div>
+          <div class="faq-item glass-card">
+            <h4 class="faq-q" data-i18n="faq.q4">Is there any performance overhead?</h4>
+            <p class="faq-a" data-i18n="faq.a4">Negligible. Written in Go, Clipal processes requests in microseconds. It
+              consumes less than 50MB of RAM, far more efficient than Node.js or Python-based proxies.</p>
+          </div>
+          <div class="faq-item glass-card">
+            <h4 class="faq-q" data-i18n="faq.q5">How does Clipal protect my existing configuration?</h4>
+            <p class="faq-a" data-i18n="faq.a5">Unlike other tools that overwrite your settings, Clipal uses a
+              non-destructive merging strategy. We only update necessary fields and preserve your
+              <code>enabledPlugins</code>, custom environment variables, and manual tweaks.
+            </p>
+          </div>
+          <div class="faq-item glass-card">
+            <h4 class="faq-q" data-i18n="faq.q6">I'm tired of the "Login Loop" in Claude Code. Can Clipal fix this?</h4>
+            <p class="faq-a" data-i18n="faq.a6">Yes. Most Login Loops are caused by incorrect header handling when
+              proxying. Clipal's protocol emulation layer ensures headers are properly scrubbed and injected, keeping
+              your session stable without repeated authentication prompts.</p>
+          </div>
+          <div class="faq-item glass-card">
+            <h4 class="faq-q" data-i18n="faq.q7">How do I know if the proxy is actually working?</h4>
+            <p class="faq-a" data-i18n="faq.a7">Clipal provides a real-time observability dashboard. You can see the
+              full
+              request flow, response times, and error codes in one click. If a request fails, we'll tell you exactly if
+              it was a network timeout or an invalid key.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== DOWNLOAD + COMMUNITY ===================== -->
+    <section id="download" aria-labelledby="download-heading">
+      <div class="container">
+        <div class="section-header reveal">
+          <div class="section-eyebrow" data-i18n="download.eyebrow">Get Clipal</div>
+          <h2 id="download-heading" class="section-title" data-i18n="download.title">Free & Open Source. Always.</h2>
+        </div>
+
+        <div class="download-grid reveal">
+
+          <!-- Download Panel -->
+          <div class="download-panel" id="download-panel">
+            <h3 class="download-panel-title" data-i18n="download.panel.title">Download for Your Platform</h3>
+
+            <div class="platform-tabs" id="platform-tabs" role="tablist" aria-label="Select platform">
+              <button class="ptab active" role="tab" aria-selected="true" data-platform="mac-arm"
+                data-i18n="platform.mac-arm">macOS (Apple Silicon)</button>
+              <button class="ptab" role="tab" aria-selected="false" data-platform="mac-intel"
+                data-i18n="platform.mac-intel">macOS (Intel)</button>
+              <button class="ptab" role="tab" aria-selected="false" data-platform="linux-x64"
+                data-i18n="platform.linux-x64">Linux x86_64</button>
+              <button class="ptab" role="tab" aria-selected="false" data-platform="linux-arm"
+                data-i18n="platform.linux-arm">Linux ARM64</button>
+              <button class="ptab" role="tab" aria-selected="false" data-platform="windows"
+                data-i18n="platform.windows">Windows</button>
+            </div>
+
+            <div class="install-cmd-wrap">
+              <div class="install-label" data-i18n="download.manual">Or download directly:</div>
+              <a href="https://github.com/lansespirit/Clipal/releases" target="_blank" rel="noopener noreferrer"
+                class="btn-primary download-btn" id="download-direct-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                <span id="download-btn-text" data-i18n="download.btn">Download Binary</span>
+              </a>
+              <div class="version-note">
+                <span data-i18n="download.version">Latest stable:</span>
+                <code>v0.11.6</code>
+                <a href="https://github.com/lansespirit/Clipal/releases" target="_blank" rel="noopener noreferrer"
+                  class="version-link" data-i18n="download.all">All releases →</a>
+              </div>
+            </div>
+
+            <div class="security-note">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                aria-hidden="true">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              <span data-i18n="download.security">100% local. Your keys never leave your machine. MIT License.</span>
+            </div>
+          </div>
+
+          <!-- Community Panel -->
+          <div class="community-panel" id="community-panel">
+            <h3 class="community-panel-title" data-i18n="community.title">Join the Community</h3>
+            <p class="community-sub" data-i18n="community.sub">Get setup help, share configs, and discuss new providers
+              with other developers.</p>
+            <div class="qr-wrap">
+              <img src="assets/community/wechat-group.png"
+                alt="Clipal WeChat Developer Community QR Code - Join for Claude Code and Gemini setup support"
+                loading="lazy" width="180" height="180" class="qr-img">
+              <p class="qr-label" data-i18n="community.qr.label">Scan to join WeChat group</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer id="site-footer">
+    <div class="container footer-container">
+      <div class="footer-brand">
+        <a href="#" class="footer-logo" aria-label="Clipal Home">
+          <img src="assets/icons/clipal-icon.svg" alt="" width="24" height="24" aria-hidden="true">
+          <span>Clipal</span>
+        </a>
+        <p class="footer-tagline" data-i18n="footer.tagline">Your Local LLM Gateway</p>
+        <p class="footer-paiart" data-i18n="footer.paiart">Part of the <a href="https://paiart.com" target="_blank"
+            rel="noopener noreferrer">PAIART</a> ecosystem — Empowering Personal AI Communities.</p>
+      </div>
+
+      <nav class="footer-links" aria-label="Footer navigation">
+        <div class="footer-link-col">
+          <div class="footer-link-heading" data-i18n="footer.product">Product</div>
+          <a href="#features" class="footer-link" data-i18n="nav.features">Features</a>
+          <a href="#how-it-works" class="footer-link" data-i18n="nav.howitworks">How It Works</a>
+          <a href="#download" class="footer-link" data-i18n="footer.download">Download</a>
+        </div>
+        <div class="footer-link-col">
+          <div class="footer-link-heading" data-i18n="footer.resources">Resources</div>
+          <a href="https://github.com/lansespirit/Clipal/blob/main/docs/en/getting-started.md" target="_blank"
+            rel="noopener noreferrer" class="footer-link" data-i18n="footer.gettingstarted"
+            data-doclink="getting-started">Getting Started</a>
+          <a href="https://github.com/lansespirit/Clipal/blob/main/docs/en/config-reference.md" target="_blank"
+            rel="noopener noreferrer" class="footer-link" data-i18n="footer.config" data-doclink="config">Config
+            Reference</a>
+          <a href="https://github.com/lansespirit/Clipal/releases" target="_blank" rel="noopener noreferrer"
+            class="footer-link" data-i18n="footer.releases">Release Notes</a>
+        </div>
+        <div class="footer-link-col">
+          <div class="footer-link-heading" data-i18n="footer.community">Community</div>
+          <a href="https://github.com/lansespirit/Clipal" target="_blank" rel="noopener noreferrer"
+            class="footer-link">GitHub</a>
+          <a href="https://github.com/lansespirit/Clipal/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"
+            class="footer-link" data-i18n="footer.license">MIT License</a>
+        </div>
+      </nav>
+    </div>
+
+    <div class="footer-bottom">
+      <div class="container footer-bottom-inner">
+        <p class="footer-copy" data-i18n="footer.copyright">© 2025 Clipal Contributors. MIT License.</p>
+        <p class="footer-security">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+          <span data-i18n="footer.security">100% local. Your keys never leave your machine.</span>
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js" defer></script>
+</body>
+
+</html>
