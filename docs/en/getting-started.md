@@ -17,35 +17,7 @@ Verify the version:
 clipal --version
 ```
 
-## 2. Initialize Config
-
-Default config directory:
-
-- macOS / Linux: `~/.clipal/`
-- Windows: `%USERPROFILE%\\.clipal\\`
-
-Initialize from the repo templates:
-
-```bash
-mkdir -p ~/.clipal
-cp examples/config.yaml ~/.clipal/config.yaml
-cp examples/claude.yaml ~/.clipal/claude.yaml
-cp examples/openai.yaml ~/.clipal/openai.yaml
-cp examples/gemini.yaml ~/.clipal/gemini.yaml
-```
-
-Direct template links:
-
-- [../../examples/config.yaml](../../examples/config.yaml)
-- [../../examples/claude.yaml](../../examples/claude.yaml)
-- [../../examples/openai.yaml](../../examples/openai.yaml)
-- [../../examples/gemini.yaml](../../examples/gemini.yaml)
-
-Then edit those files and fill in your upstream `base_url`, `api_key`, or `api_keys`.
-
-For field details, see [Config Reference](config-reference.md).
-
-## 3. Start Clipal
+## 2. Start Clipal
 
 ```bash
 clipal
@@ -63,7 +35,44 @@ clipal --log-level debug
 By default, Clipal starts both:
 
 - the local proxy
-- the localhost Web management UI
+- the Web management UI at `http://127.0.0.1:3333/`
+
+## 3. Configure Providers via Web UI
+
+Open the Web UI in your browser and add your providers there — no config files needed:
+
+```text
+http://127.0.0.1:3333/
+```
+
+From the **Providers** page you can:
+
+- Add, edit, or remove providers (Claude, OpenAI, Gemini, and any OpenAI-compatible endpoint)
+- Set `base_url`, `api_key` / `api_keys`, and routing weights
+- Enable or disable individual keys without restarting
+
+Changes take effect immediately without a restart.
+
+> **Advanced / Optional — Manual YAML config**
+>
+> If you prefer to manage configuration as code, you can still edit YAML files directly.
+> Default config directory:
+> - macOS / Linux: `~/.clipal/`
+> - Windows: `%USERPROFILE%\\.clipal\\`
+>
+> Copy the example templates to get started:
+>
+> ```bash
+> mkdir -p ~/.clipal
+> cp examples/config.yaml ~/.clipal/config.yaml
+> cp examples/claude.yaml ~/.clipal/claude.yaml
+> cp examples/openai.yaml ~/.clipal/openai.yaml
+> cp examples/gemini.yaml ~/.clipal/gemini.yaml
+> ```
+>
+> Template links: [config.yaml](../../examples/config.yaml) · [claude.yaml](../../examples/claude.yaml) · [openai.yaml](../../examples/openai.yaml) · [gemini.yaml](../../examples/gemini.yaml)
+>
+> For field details, see [Config Reference](config-reference.md).
 
 ## 4. Verify It Is Running
 
@@ -71,12 +80,6 @@ By default, Clipal starts both:
 curl -fsS http://127.0.0.1:3333/health
 clipal status
 clipal status --json
-```
-
-Open this in your browser:
-
-```text
-http://127.0.0.1:3333/
 ```
 
 ## 5. Connect Your Client
@@ -95,7 +98,7 @@ See [Client Setup](client-setup.md) for exact client-side configuration.
 
 ## 6. What To Read Next
 
-- Want to manage providers in a GUI: [Web UI Guide](web-ui.md)
+- Want a full walkthrough of the Web UI: [Web UI Guide](web-ui.md)
 - Want to understand failover, pinning, and multi-key behavior: [Routing and Failover](routing-and-failover.md)
 - Want autostart or background service setup: [Services, Status, and Updates](services.md)
 - Hit a problem: [Troubleshooting](troubleshooting.md)

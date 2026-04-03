@@ -17,35 +17,7 @@
 clipal --version
 ```
 
-## 2. 初始化配置
-
-默认配置目录：
-
-- macOS / Linux: `~/.clipal/`
-- Windows: `%USERPROFILE%\\.clipal\\`
-
-从仓库模板初始化：
-
-```bash
-mkdir -p ~/.clipal
-cp examples/config.yaml ~/.clipal/config.yaml
-cp examples/claude.yaml ~/.clipal/claude.yaml
-cp examples/openai.yaml ~/.clipal/openai.yaml
-cp examples/gemini.yaml ~/.clipal/gemini.yaml
-```
-
-直接查看模板：
-
-- [../../examples/config.yaml](../../examples/config.yaml)
-- [../../examples/claude.yaml](../../examples/claude.yaml)
-- [../../examples/openai.yaml](../../examples/openai.yaml)
-- [../../examples/gemini.yaml](../../examples/gemini.yaml)
-
-然后编辑这些文件，填入你的上游 `base_url`、`api_key` 或 `api_keys`。
-
-详细字段说明见 [配置参考](config-reference.md)。
-
-## 3. 启动 Clipal
+## 2. 启动 Clipal
 
 ```bash
 clipal
@@ -63,7 +35,43 @@ clipal --log-level debug
 Clipal 默认会同时启动：
 
 - 本地代理服务
-- 本机 Web 管理界面
+- Web 管理界面（`http://127.0.0.1:3333/`）
+
+## 3. 通过 Web UI 配置 Provider
+
+用浏览器打开管理界面，直接在页面上添加 provider，无需编辑任何配置文件：
+
+```text
+http://127.0.0.1:3333/
+```
+
+在 **Providers** 页面你可以：
+
+- 添加、编辑或删除 provider（Claude、OpenAI、Gemini 及任意 OpenAI 兼容端点）
+- 设置 `base_url`、`api_key` / `api_keys` 和路由权重
+
+所有改动**即时生效**，无需重启服务。
+
+> **进阶 / 可选 — 手动编辑 YAML 配置**
+>
+> 如果你更习惯用代码管理配置，也可以继续直接编辑 YAML 文件。
+> 默认配置目录：
+> - macOS / Linux: `~/.clipal/`
+> - Windows: `%USERPROFILE%\\.clipal\\`
+>
+> 从仓库模板初始化：
+>
+> ```bash
+> mkdir -p ~/.clipal
+> cp examples/config.yaml ~/.clipal/config.yaml
+> cp examples/claude.yaml ~/.clipal/claude.yaml
+> cp examples/openai.yaml ~/.clipal/openai.yaml
+> cp examples/gemini.yaml ~/.clipal/gemini.yaml
+> ```
+>
+> 模板链接：[config.yaml](../../examples/config.yaml) · [claude.yaml](../../examples/claude.yaml) · [openai.yaml](../../examples/openai.yaml) · [gemini.yaml](../../examples/gemini.yaml)
+>
+> 详细字段说明见 [配置参考](config-reference.md)。
 
 ## 4. 验证运行状态
 
@@ -71,12 +79,6 @@ Clipal 默认会同时启动：
 curl -fsS http://127.0.0.1:3333/health
 clipal status
 clipal status --json
-```
-
-浏览器打开：
-
-```text
-http://127.0.0.1:3333/
 ```
 
 ## 5. 接入你的客户端
@@ -95,7 +97,7 @@ Clipal 现在统一推荐的客户端入口是：
 
 ## 6. 下一步看什么
 
-- 想用图形界面管理 provider：看 [Web UI 使用说明](web-ui.md)
+- 想了解 Web UI 的完整功能：看 [Web UI 使用说明](web-ui.md)
 - 想了解自动切换、手动锁定、多 Key：看 [路由与故障切换](routing-and-failover.md)
 - 想配置后台服务和开机自启：看 [后台服务、状态与更新](services.md)
 - 遇到问题：看 [排障与 FAQ](troubleshooting.md)
