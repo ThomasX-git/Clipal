@@ -121,12 +121,15 @@ const (
 
 // Provider represents an API provider configuration
 type Provider struct {
-	Name     string   `yaml:"name"`
-	BaseURL  string   `yaml:"base_url"`
-	APIKey   string   `yaml:"api_key,omitempty"`
-	APIKeys  []string `yaml:"api_keys,omitempty"`
-	Priority int      `yaml:"priority"`
-	Enabled  *bool    `yaml:"enabled,omitempty"`
+	Name                 string   `yaml:"name"`
+	BaseURL              string   `yaml:"base_url"`
+	APIKey               string   `yaml:"api_key,omitempty"`
+	APIKeys              []string `yaml:"api_keys,omitempty"`
+	Priority             int      `yaml:"priority"`
+	Enabled              *bool    `yaml:"enabled,omitempty"`
+	Model                string   `yaml:"model,omitempty"`
+	ReasoningEffort      string   `yaml:"reasoning_effort,omitempty"`
+	ThinkingBudgetTokens int      `yaml:"thinking_budget_tokens,omitempty"`
 }
 
 // IsEnabled returns whether the provider is enabled (default true)
@@ -468,6 +471,8 @@ func applyClientDefaults(cc *ClientConfig) {
 		}
 		cc.Providers[i].APIKey = strings.TrimSpace(cc.Providers[i].APIKey)
 		cc.Providers[i].APIKeys = cc.Providers[i].NormalizedAPIKeys()
+		cc.Providers[i].Model = strings.TrimSpace(cc.Providers[i].Model)
+		cc.Providers[i].ReasoningEffort = strings.TrimSpace(cc.Providers[i].ReasoningEffort)
 		if len(cc.Providers[i].APIKeys) == 1 {
 			cc.Providers[i].APIKey = cc.Providers[i].APIKeys[0]
 			cc.Providers[i].APIKeys = nil
@@ -673,6 +678,9 @@ func validateProviders(clientName string, providers []Provider) error {
 		}
 		if p.Priority < 1 {
 			return fmt.Errorf("%s provider %s: priority must be >= 1", clientName, p.Name)
+		}
+		if p.ThinkingBudgetTokens < 0 {
+			return fmt.Errorf("%s provider %s: thinking_budget_tokens must be >= 0", clientName, p.Name)
 		}
 	}
 	return nil

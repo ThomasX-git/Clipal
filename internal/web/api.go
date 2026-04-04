@@ -251,6 +251,12 @@ func (a *API) HandleAddProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
+	req.Model = trimStringPtr(req.Model)
+	req.ReasoningEffort = trimStringPtr(req.ReasoningEffort)
+	if req.ThinkingBudgetTokens != nil && *req.ThinkingBudgetTokens < 0 {
+		writeError(w, "thinking_budget_tokens must be >= 0", http.StatusBadRequest)
+		return
+	}
 
 	name := strings.TrimSpace(req.Name)
 	baseURL := strings.TrimSpace(req.BaseURL)
@@ -312,6 +318,7 @@ func (a *API) HandleAddProvider(w http.ResponseWriter, r *http.Request) {
 		Priority: priority,
 		Enabled:  req.Enabled,
 	}
+	applyProviderOverrides(&provider, req)
 	assignProviderKeys(&provider, keys)
 
 	cc.Providers = append(cc.Providers, provider)
@@ -356,6 +363,12 @@ func (a *API) HandleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+	}
+	req.Model = trimStringPtr(req.Model)
+	req.ReasoningEffort = trimStringPtr(req.ReasoningEffort)
+	if req.ThinkingBudgetTokens != nil && *req.ThinkingBudgetTokens < 0 {
+		writeError(w, "thinking_budget_tokens must be >= 0", http.StatusBadRequest)
+		return
 	}
 	keys, err := normalizeProviderKeys(req)
 	if err != nil {
@@ -891,6 +904,29 @@ func normalizeProviderKeys(req ProviderRequest) ([]string, error) {
 	return keys, nil
 }
 
+func trimStringPtr(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*v)
+	return &trimmed
+}
+
+func applyProviderOverrides(provider *config.Provider, req ProviderRequest) {
+	if provider == nil {
+		return
+	}
+	if req.Model != nil {
+		provider.Model = strings.TrimSpace(*req.Model)
+	}
+	if req.ReasoningEffort != nil {
+		provider.ReasoningEffort = strings.TrimSpace(*req.ReasoningEffort)
+	}
+	if req.ThinkingBudgetTokens != nil {
+		provider.ThinkingBudgetTokens = *req.ThinkingBudgetTokens
+	}
+}
+
 func assignProviderKeys(provider *config.Provider, keys []string) {
 	if provider == nil {
 		return
@@ -940,6 +976,7 @@ func updateProviderInList(providers []config.Provider, name string, req Provider
 			if req.Enabled != nil {
 				providers[i].Enabled = req.Enabled
 			}
+			applyProviderOverrides(&providers[i], req)
 			return true
 		}
 	}

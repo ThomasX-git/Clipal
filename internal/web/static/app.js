@@ -65,6 +65,9 @@ function app() {
                     pinBadge: 'Pinned',
                     baseUrl: 'Base URL',
                     apiKeys: 'API Keys',
+                    model: 'Model Override',
+                    reasoningEffort: 'Reasoning Effort',
+                    thinkingBudgetTokens: 'Thinking Budget Tokens',
                     configuredCount: '{count} configured',
                     pinTitle: 'Pin (Manual)',
                     dragToReorder: 'Drag to reorder providers',
@@ -107,6 +110,12 @@ function app() {
                         name: 'Name *',
                         nameHint: 'Letters, numbers, dot (.), underscore (_), and hyphen (-).',
                         baseUrl: 'Base URL *',
+                        model: 'Model Override',
+                        modelHint: 'Leave empty to keep the client-provided model.',
+                        reasoningEffort: 'Reasoning Effort',
+                        reasoningEffortHint: 'Applied to OpenAI Responses as reasoning.effort.',
+                        thinkingBudgetTokens: 'Thinking Budget Tokens',
+                        thinkingBudgetTokensHint: 'Applied to Claude thinking.budget_tokens. Use 0 to clear.',
                         apiKeys: 'API Keys',
                         apiKeysRequired: 'API Keys *',
                         onePerLine: 'One API key per line',
@@ -339,6 +348,9 @@ function app() {
                     pinBadge: '已固定',
                     baseUrl: 'Base URL',
                     apiKeys: 'API Keys',
+                    model: '模型覆盖',
+                    reasoningEffort: '思考强度',
+                    thinkingBudgetTokens: '思考预算 Tokens',
                     configuredCount: '已配置 {count} 个',
                     pinTitle: '固定到手动模式',
                     edit: '编辑',
@@ -381,6 +393,12 @@ function app() {
                         name: '名称 *',
                         nameHint: '允许字母、数字、点号 (.)、下划线 (_) 和连字符 (-)。',
                         baseUrl: 'Base URL *',
+                        model: '模型覆盖',
+                        modelHint: '留空则沿用客户端请求里的模型。',
+                        reasoningEffort: '思考强度',
+                        reasoningEffortHint: '会写入 OpenAI Responses 的 reasoning.effort。',
+                        thinkingBudgetTokens: '思考预算 Tokens',
+                        thinkingBudgetTokensHint: '会写入 Claude 的 thinking.budget_tokens。填 0 表示清空。',
                         apiKeys: 'API Keys',
                         apiKeysRequired: 'API Keys *',
                         onePerLine: '每行一个 API Key',
@@ -639,6 +657,9 @@ function app() {
         providerForm: {
             name: '',
             base_url: '',
+            model: '',
+            reasoning_effort: '',
+            thinking_budget_tokens: 0,
             api_keys_text: '',
             priority: 1,
             enabled: true
@@ -1415,6 +1436,26 @@ function app() {
             return this.tf('modal.provider.keepExistingKeys', { count });
         },
 
+        providerSupportsModelOverride() {
+            return this.selectedClient === 'openai' || this.selectedClient === 'claude';
+        },
+
+        providerSupportsReasoningEffort() {
+            return this.selectedClient === 'openai';
+        },
+
+        providerSupportsThinkingBudget() {
+            return this.selectedClient === 'claude';
+        },
+
+        normalizeThinkingBudgetTokens(value) {
+            const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+            if (Number.isNaN(parsed) || parsed < 0) {
+                return 0;
+            }
+            return parsed;
+        },
+
         levelLabel(level) {
             const value = String(level || '').trim().toLowerCase();
             return this.t(`level.${value}`);
@@ -1762,6 +1803,15 @@ function app() {
                     priority: this.providerForm.priority,
                     enabled: this.providerForm.enabled
                 };
+                if (this.providerSupportsModelOverride()) {
+                    payload.model = String(this.providerForm.model || '');
+                }
+                if (this.providerSupportsReasoningEffort()) {
+                    payload.reasoning_effort = String(this.providerForm.reasoning_effort || '');
+                }
+                if (this.providerSupportsThinkingBudget()) {
+                    payload.thinking_budget_tokens = this.normalizeThinkingBudgetTokens(this.providerForm.thinking_budget_tokens);
+                }
                 const keys = String(this.providerForm.api_keys_text || '')
                     .split('\n')
                     .map(v => v.trim())
@@ -1813,6 +1863,9 @@ function app() {
             this.providerForm = {
                 name: provider.name,
                 base_url: provider.base_url,
+                model: String(provider.model || ''),
+                reasoning_effort: String(provider.reasoning_effort || ''),
+                thinking_budget_tokens: Number(provider.thinking_budget_tokens || 0),
                 api_keys_text: '',
                 priority: provider.priority,
                 enabled: !!provider.enabled
@@ -1852,6 +1905,9 @@ function app() {
             this.providerForm = {
                 name: '',
                 base_url: '',
+                model: '',
+                reasoning_effort: '',
+                thinking_budget_tokens: 0,
                 api_keys_text: '',
                 priority: maxPriority + 1,
                 enabled: true
@@ -2004,6 +2060,9 @@ function app() {
             this.providerForm = {
                 name: '',
                 base_url: '',
+                model: '',
+                reasoning_effort: '',
+                thinking_budget_tokens: 0,
                 api_keys_text: '',
                 priority: 1,
                 enabled: true

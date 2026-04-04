@@ -113,10 +113,13 @@ type ClientConfigResponse struct {
 
 // ProviderRequest represents a request to create or update a provider
 type ProviderRequest struct {
-	Name    string   `json:"name"`
-	BaseURL string   `json:"base_url"`
-	APIKey  string   `json:"api_key,omitempty"`
-	APIKeys []string `json:"api_keys,omitempty"`
+	Name                 string   `json:"name"`
+	BaseURL              string   `json:"base_url"`
+	APIKey               string   `json:"api_key,omitempty"`
+	APIKeys              []string `json:"api_keys,omitempty"`
+	Model                *string  `json:"model,omitempty"`
+	ReasoningEffort      *string  `json:"reasoning_effort,omitempty"`
+	ThinkingBudgetTokens *int     `json:"thinking_budget_tokens,omitempty"`
 	// Priority is 1-based. Omit to keep existing value (on updates) or to
 	// auto-assign the next priority (on create).
 	Priority *int  `json:"priority,omitempty"`
@@ -125,11 +128,14 @@ type ProviderRequest struct {
 
 // ProviderResponse is returned for provider listings (never includes api_key).
 type ProviderResponse struct {
-	Name     string `json:"name"`
-	BaseURL  string `json:"base_url"`
-	Priority int    `json:"priority"`
-	Enabled  bool   `json:"enabled"`
-	KeyCount int    `json:"key_count"`
+	Name                 string `json:"name"`
+	BaseURL              string `json:"base_url"`
+	Priority             int    `json:"priority"`
+	Enabled              bool   `json:"enabled"`
+	KeyCount             int    `json:"key_count"`
+	Model                string `json:"model,omitempty"`
+	ReasoningEffort      string `json:"reasoning_effort,omitempty"`
+	ThinkingBudgetTokens int    `json:"thinking_budget_tokens,omitempty"`
 }
 
 // ReorderRequest represents a request to reorder providers
@@ -153,12 +159,15 @@ type ClientConfigExport struct {
 }
 
 type ProviderExport struct {
-	Name     string   `json:"name"`
-	BaseURL  string   `json:"base_url"`
-	APIKey   string   `json:"api_key,omitempty"`
-	APIKeys  []string `json:"api_keys,omitempty"`
-	Priority int      `json:"priority"`
-	Enabled  *bool    `json:"enabled,omitempty"`
+	Name                 string   `json:"name"`
+	BaseURL              string   `json:"base_url"`
+	APIKey               string   `json:"api_key,omitempty"`
+	APIKeys              []string `json:"api_keys,omitempty"`
+	Priority             int      `json:"priority"`
+	Enabled              *bool    `json:"enabled,omitempty"`
+	Model                string   `json:"model,omitempty"`
+	ReasoningEffort      string   `json:"reasoning_effort,omitempty"`
+	ThinkingBudgetTokens int      `json:"thinking_budget_tokens,omitempty"`
 }
 
 // StatusResponse represents the system status
@@ -333,11 +342,14 @@ func toProviderResponses(providers []config.Provider) []ProviderResponse {
 	out := make([]ProviderResponse, 0, len(providers))
 	for _, p := range providers {
 		out = append(out, ProviderResponse{
-			Name:     p.Name,
-			BaseURL:  p.BaseURL,
-			Priority: p.Priority,
-			Enabled:  p.IsEnabled(),
-			KeyCount: p.KeyCount(),
+			Name:                 p.Name,
+			BaseURL:              p.BaseURL,
+			Priority:             p.Priority,
+			Enabled:              p.IsEnabled(),
+			KeyCount:             p.KeyCount(),
+			Model:                p.Model,
+			ReasoningEffort:      p.ReasoningEffort,
+			ThinkingBudgetTokens: p.ThinkingBudgetTokens,
 		})
 	}
 	return out
@@ -347,12 +359,15 @@ func toClientConfigExport(cc config.ClientConfig) ClientConfigExport {
 	out := make([]ProviderExport, 0, len(cc.Providers))
 	for _, p := range cc.Providers {
 		out = append(out, ProviderExport{
-			Name:     p.Name,
-			BaseURL:  p.BaseURL,
-			APIKey:   p.APIKey,
-			APIKeys:  append([]string(nil), p.APIKeys...),
-			Priority: p.Priority,
-			Enabled:  p.Enabled,
+			Name:                 p.Name,
+			BaseURL:              p.BaseURL,
+			APIKey:               p.APIKey,
+			APIKeys:              append([]string(nil), p.APIKeys...),
+			Priority:             p.Priority,
+			Enabled:              p.Enabled,
+			Model:                p.Model,
+			ReasoningEffort:      p.ReasoningEffort,
+			ThinkingBudgetTokens: p.ThinkingBudgetTokens,
 		})
 	}
 	return ClientConfigExport{

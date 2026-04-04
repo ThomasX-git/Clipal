@@ -20,6 +20,8 @@ http://127.0.0.1:3333/
 - 调整 `auto` / `manual` 模式
 - 在 `manual` 模式下固定某个 provider
 - 录入单个 `api_key` 或多行 `api_keys`
+- 配置 provider 级模型覆盖
+- 配置 provider 级 OpenAI `reasoning_effort` 或 Claude `thinking_budget_tokens`
 
 ### Global Settings
 

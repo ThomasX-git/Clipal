@@ -75,6 +75,8 @@ providers:
   - name: p1
     base_url: https://example.com
     api_key: secret
+    model: gpt-5.4
+    reasoning_effort: high
     priority: 2
   - name: p2
     base_url: https://example2.com
@@ -116,6 +118,22 @@ providers:
 	if got[0]["key_count"] != float64(1) {
 		t.Fatalf("expected key_count=1, got %v", got[0]["key_count"])
 	}
+	var first map[string]any
+	for _, provider := range got {
+		if provider["name"] == "p1" {
+			first = provider
+			break
+		}
+	}
+	if first == nil {
+		t.Fatalf("expected provider p1 in listing, got %#v", got)
+	}
+	if first["model"] != "gpt-5.4" {
+		t.Fatalf("expected model override in listing, got %v", first["model"])
+	}
+	if first["reasoning_effort"] != "high" {
+		t.Fatalf("expected reasoning_effort override in listing, got %v", first["reasoning_effort"])
+	}
 }
 
 func TestHandleExportConfig_IncludesAPIKey_SnakeCase(t *testing.T) {
@@ -125,6 +143,8 @@ providers:
   - name: p1
     base_url: https://example.com
     api_key: secret
+    model: gpt-5.4
+    reasoning_effort: medium
     priority: 1
 `), 0600); err != nil {
 		t.Fatal(err)
@@ -160,6 +180,12 @@ providers:
 	}
 	if _, ok := p0["BaseURL"]; ok {
 		t.Fatalf("did not expect BaseURL in export")
+	}
+	if p0["model"] != "gpt-5.4" {
+		t.Fatalf("expected model override in export, got %v", p0["model"])
+	}
+	if p0["reasoning_effort"] != "medium" {
+		t.Fatalf("expected reasoning_effort in export, got %v", p0["reasoning_effort"])
 	}
 }
 
@@ -317,6 +343,8 @@ func TestHandleAddProvider_AcceptsAPIKeys(t *testing.T) {
   "name": "p1",
   "base_url": "https://example.com",
   "api_keys": ["key1", "key2"],
+  "model": "gpt-5.4",
+  "reasoning_effort": "high",
   "priority": 1,
   "enabled": true
 }`)
@@ -337,6 +365,12 @@ func TestHandleAddProvider_AcceptsAPIKeys(t *testing.T) {
 	}
 	if cfg.OpenAI.Providers[0].APIKey != "" {
 		t.Fatalf("expected multi-key provider to be persisted via api_keys")
+	}
+	if cfg.OpenAI.Providers[0].Model != "gpt-5.4" {
+		t.Fatalf("model = %q", cfg.OpenAI.Providers[0].Model)
+	}
+	if cfg.OpenAI.Providers[0].ReasoningEffort != "high" {
+		t.Fatalf("reasoning_effort = %q", cfg.OpenAI.Providers[0].ReasoningEffort)
 	}
 }
 
@@ -482,6 +516,8 @@ providers:
   "name":"p3",
   "base_url":"https://three.example",
   "api_keys":["k3","k4"],
+  "model":"gpt-5.4-mini",
+  "reasoning_effort":"low",
   "priority":5,
   "enabled":false
 }`)))
@@ -517,7 +553,51 @@ providers:
 		if got := updated.KeyCount(); got != 2 {
 			t.Fatalf("key count=%d", got)
 		}
+		if updated.Model != "gpt-5.4-mini" {
+			t.Fatalf("model=%q", updated.Model)
+		}
+		if updated.ReasoningEffort != "low" {
+			t.Fatalf("reasoning_effort=%q", updated.ReasoningEffort)
+		}
 	})
+}
+
+func TestHandleUpdateProvider_ClearsOverrideFields(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "claude.yaml"), []byte(`
+mode: auto
+providers:
+  - name: p1
+    base_url: https://one.example
+    api_key: key1
+    model: claude-sonnet-4-5
+    thinking_budget_tokens: 4096
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	api := NewAPI(dir, "test", nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/providers/claude/p1", bytes.NewReader([]byte(`{
+  "model":"",
+  "thinking_budget_tokens":0
+}`)))
+	w := httptest.NewRecorder()
+	api.HandleUpdateProvider(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if got := cfg.Claude.Providers[0].Model; got != "" {
+		t.Fatalf("model = %q, want empty", got)
+	}
+	if got := cfg.Claude.Providers[0].ThinkingBudgetTokens; got != 0 {
+		t.Fatalf("thinking_budget_tokens = %d, want 0", got)
+	}
 }
 
 func TestHandleDeleteProvider_Paths(t *testing.T) {

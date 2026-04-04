@@ -926,6 +926,11 @@ func (cp *ClientProxy) createProxyRequest(original *http.Request, provider confi
 	if err != nil {
 		return nil, err
 	}
+	requestCtx, ok := requestContextFromRequest(original)
+	if !ok {
+		requestCtx = requestContextForClientPath(cp.clientType, path, false)
+	}
+	body = applyProviderRequestOverrides(original, requestCtx, provider, body)
 
 	// Create the request
 	proxyReq, err := http.NewRequestWithContext(original.Context(), original.Method, targetURL, bytes.NewReader(body))

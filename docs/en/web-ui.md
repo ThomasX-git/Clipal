@@ -20,6 +20,8 @@ If you changed the port, replace `3333` with your actual port.
 - Switch between `auto` and `manual`
 - Pin a provider in `manual` mode
 - Enter either a single `api_key` or multi-line `api_keys`
+- Configure provider-level model overrides
+- Configure provider-level OpenAI `reasoning_effort` or Claude `thinking_budget_tokens`
 
 ### Global Settings
 
