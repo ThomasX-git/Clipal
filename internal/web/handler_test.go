@@ -110,6 +110,9 @@ func TestServeIndex_ContentTypeAndNotFound(t *testing.T) {
 	if got := w.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
 		t.Fatalf("content-type=%q", got)
 	}
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("cache-control=%q", got)
+	}
 	body := w.Body.String()
 	if body == "" {
 		t.Fatalf("expected index body to be non-empty")
@@ -120,6 +123,20 @@ func TestServeIndex_ContentTypeAndNotFound(t *testing.T) {
 	h.serveIndex(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("missing status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestServeStatic_SetsNoStoreCacheControl(t *testing.T) {
+	h := NewHandler(t.TempDir(), "test", nil)
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/static/app.js", nil)
+	w := httptest.NewRecorder()
+	h.serveStatic(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("cache-control=%q", got)
 	}
 }
 

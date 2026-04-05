@@ -850,17 +850,17 @@
                         </div>
 
                         <div class="provider-overrides-grid">
-                            <div class="provider-overrides-field form-group" x-show="providerSupportsModelOverride()">
+                            <div class="provider-overrides-field" x-show="providerSupportsModelOverride()">
                                 <label class="form-label" x-text="t('modal.provider.model')"></label>
                                 <input type="text" x-model="providerForm.model" class="form-input" placeholder="gpt-5.4">
                             </div>
 
-                            <div class="provider-overrides-field form-group" x-show="providerSupportsReasoningEffort()">
+                            <div class="provider-overrides-field" x-show="providerSupportsReasoningEffort()">
                                 <label class="form-label" x-text="t('modal.provider.reasoningEffort')"></label>
                                 <input type="text" x-model="providerForm.reasoning_effort" class="form-input" placeholder="high">
                             </div>
 
-                            <div class="provider-overrides-field form-group" x-show="providerSupportsThinkingBudget()">
+                            <div class="provider-overrides-field" x-show="providerSupportsThinkingBudget()">
                                 <label class="form-label" x-text="t('modal.provider.thinkingBudgetTokens')"></label>
                                 <input type="number" x-model.number="providerForm.thinking_budget_tokens" class="form-input" min="0" placeholder="4096">
                             </div>

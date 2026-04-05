@@ -174,6 +174,7 @@ func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(data)
 }
@@ -204,6 +205,7 @@ func (h *Handler) serveStatic(w http.ResponseWriter, r *http.Request) {
 	if ct := mime.TypeByExtension(path.Ext(p)); ct != "" {
 		w.Header().Set("Content-Type", ct)
 	}
+	w.Header().Set("Cache-Control", "no-store")
 
 	_, _ = w.Write(data)
 }

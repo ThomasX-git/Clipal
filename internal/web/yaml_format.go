@@ -73,14 +73,19 @@ func formatClientConfigYAML(clientType string, cc config.ClientConfig) []byte {
 		}
 		writeBufferString(&b, fmt.Sprintf("    priority: %d\n", p.Priority))
 		writeBufferString(&b, fmt.Sprintf("    enabled: %v\n", p.IsEnabled()))
-		if strings.TrimSpace(p.Model) != "" {
-			writeBufferString(&b, fmt.Sprintf("    model: %s\n", yamlDoubleQuote(strings.TrimSpace(p.Model))))
-		}
-		if strings.TrimSpace(p.ReasoningEffort) != "" {
-			writeBufferString(&b, fmt.Sprintf("    reasoning_effort: %s\n", yamlDoubleQuote(strings.TrimSpace(p.ReasoningEffort))))
-		}
-		if p.ThinkingBudgetTokens > 0 {
-			writeBufferString(&b, fmt.Sprintf("    thinking_budget_tokens: %d\n", p.ThinkingBudgetTokens))
+		if p.ModelOverride() != "" || p.OpenAIReasoningEffort() != "" || p.ClaudeThinkingBudgetTokens() > 0 {
+			writeBufferString(&b, "    overrides:\n")
+			if p.ModelOverride() != "" {
+				writeBufferString(&b, fmt.Sprintf("      model: %s\n", yamlDoubleQuote(p.ModelOverride())))
+			}
+			if p.OpenAIReasoningEffort() != "" {
+				writeBufferString(&b, "      openai:\n")
+				writeBufferString(&b, fmt.Sprintf("        reasoning_effort: %s\n", yamlDoubleQuote(p.OpenAIReasoningEffort())))
+			}
+			if p.ClaudeThinkingBudgetTokens() > 0 {
+				writeBufferString(&b, "      claude:\n")
+				writeBufferString(&b, fmt.Sprintf("        thinking_budget_tokens: %d\n", p.ClaudeThinkingBudgetTokens()))
+			}
 		}
 	}
 

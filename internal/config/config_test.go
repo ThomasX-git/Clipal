@@ -377,11 +377,15 @@ func TestValidate_ProviderThinkingBudgetRejectsNegative(t *testing.T) {
 			Mode: ClientModeAuto,
 			Providers: []Provider{
 				{
-					Name:                 "p1",
-					BaseURL:              "https://example.com",
-					APIKey:               "key1",
-					Priority:             1,
-					ThinkingBudgetTokens: -1,
+					Name:     "p1",
+					BaseURL:  "https://example.com",
+					APIKey:   "key1",
+					Priority: 1,
+					Overrides: &ProviderOverrides{
+						Claude: &ClaudeOverrides{
+							ThinkingBudgetTokens: ptr(-1),
+						},
+					},
 				},
 			},
 		},
@@ -394,7 +398,7 @@ func TestValidate_ProviderThinkingBudgetRejectsNegative(t *testing.T) {
 	}
 }
 
-func TestLoad_ProviderOverridesRoundTrip(t *testing.T) {
+func TestLoad_ProviderOverridesSupportNestedAndLegacyYAML(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -403,8 +407,10 @@ providers:
   - name: openai-primary
     base_url: https://openai.example
     api_key: openai-key
-    model: " gpt-5.4 "
-    reasoning_effort: " high "
+    overrides:
+      model: " gpt-5.4 "
+      openai:
+        reasoning_effort: " high "
     priority: 1
 `)
 	writeClientConfigFile(t, dir, "claude.yaml", `
@@ -421,13 +427,22 @@ providers:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := cfg.OpenAI.Providers[0].Model; got != "gpt-5.4" {
+	if cfg.OpenAI.Providers[0].Overrides == nil {
+		t.Fatalf("expected openai overrides to be present")
+	}
+	if got := cfg.OpenAI.Providers[0].ModelOverride(); got != "gpt-5.4" {
 		t.Fatalf("OpenAI model = %q", got)
 	}
-	if got := cfg.OpenAI.Providers[0].ReasoningEffort; got != "high" {
+	if got := cfg.OpenAI.Providers[0].OpenAIReasoningEffort(); got != "high" {
 		t.Fatalf("OpenAI reasoning_effort = %q", got)
 	}
-	if got := cfg.Claude.Providers[0].ThinkingBudgetTokens; got != 2048 {
+	if cfg.Claude.Providers[0].Overrides == nil {
+		t.Fatalf("expected claude overrides to be present")
+	}
+	if got := cfg.Claude.Providers[0].ModelOverride(); got != "claude-sonnet-4-5" {
+		t.Fatalf("Claude model = %q", got)
+	}
+	if got := cfg.Claude.Providers[0].ClaudeThinkingBudgetTokens(); got != 2048 {
 		t.Fatalf("Claude thinking_budget_tokens = %d", got)
 	}
 }
@@ -449,7 +464,7 @@ providers:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := cfg.Claude.Providers[0].ThinkingBudgetTokens; got != -1 {
+	if got := cfg.Claude.Providers[0].ClaudeThinkingBudgetTokens(); got != -1 {
 		t.Fatalf("ThinkingBudgetTokens = %d, want -1", got)
 	}
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "thinking_budget_tokens") {

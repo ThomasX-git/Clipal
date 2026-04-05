@@ -10,8 +10,10 @@ providers:
   - name: "anthropic-direct"
     base_url: "https://api.anthropic.com"
     api_key: "sk-ant-xxx"
-    model: "claude-sonnet-4-5"
-    thinking_budget_tokens: 4096
+    overrides:
+      model: "claude-sonnet-4-5"
+      claude:
+        thinking_budget_tokens: 4096
     priority: 1
     enabled: true
 

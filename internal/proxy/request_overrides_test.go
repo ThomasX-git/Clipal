@@ -12,6 +12,10 @@ import (
 	"github.com/lansespirit/Clipal/internal/config"
 )
 
+func strPtr(v string) *string { return &v }
+
+func intPtr(v int) *int { return &v }
+
 func decodeRequestBodyMap(t *testing.T, req *http.Request) map[string]any {
 	t.Helper()
 	body, err := io.ReadAll(req.Body)
@@ -30,12 +34,16 @@ func TestCreateProxyRequest_AppliesOpenAIResponsesOverrides(t *testing.T) {
 
 	cp := newClientProxy(ClientOpenAI, config.ClientModeAuto, "", []config.Provider{
 		{
-			Name:            "openai",
-			BaseURL:         "https://api.openai.example",
-			APIKey:          "provider-key",
-			Priority:        1,
-			Model:           "gpt-5.4",
-			ReasoningEffort: "high",
+			Name:     "openai",
+			BaseURL:  "https://api.openai.example",
+			APIKey:   "provider-key",
+			Priority: 1,
+			Overrides: &config.ProviderOverrides{
+				Model: strPtr("gpt-5.4"),
+				OpenAI: &config.OpenAIOverrides{
+					ReasoningEffort: strPtr("high"),
+				},
+			},
 		},
 	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 
@@ -72,12 +80,16 @@ func TestCreateProxyRequest_ReplacesChatReasoningEffortOnlyWhenPresent(t *testin
 
 	cp := newClientProxy(ClientOpenAI, config.ClientModeAuto, "", []config.Provider{
 		{
-			Name:            "openai",
-			BaseURL:         "https://api.openai.example",
-			APIKey:          "provider-key",
-			Priority:        1,
-			Model:           "gpt-5.4-mini",
-			ReasoningEffort: "low",
+			Name:     "openai",
+			BaseURL:  "https://api.openai.example",
+			APIKey:   "provider-key",
+			Priority: 1,
+			Overrides: &config.ProviderOverrides{
+				Model: strPtr("gpt-5.4-mini"),
+				OpenAI: &config.OpenAIOverrides{
+					ReasoningEffort: strPtr("low"),
+				},
+			},
 		},
 	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 
@@ -119,11 +131,11 @@ func TestCreateProxyRequest_DoesNotRewriteOpenAINonGenerationModel(t *testing.T)
 
 	cp := newClientProxy(ClientOpenAI, config.ClientModeAuto, "", []config.Provider{
 		{
-			Name:     "openai",
-			BaseURL:  "https://api.openai.example",
-			APIKey:   "provider-key",
-			Priority: 1,
-			Model:    "text-embedding-3-large",
+			Name:      "openai",
+			BaseURL:   "https://api.openai.example",
+			APIKey:    "provider-key",
+			Priority:  1,
+			Overrides: &config.ProviderOverrides{Model: strPtr("text-embedding-3-large")},
 		},
 	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 
@@ -153,12 +165,16 @@ func TestCreateProxyRequest_AppliesClaudeThinkingOverrides(t *testing.T) {
 
 	cp := newClientProxy(ClientClaude, config.ClientModeAuto, "", []config.Provider{
 		{
-			Name:                 "claude",
-			BaseURL:              "https://api.anthropic.example",
-			APIKey:               "provider-key",
-			Priority:             1,
-			Model:                "claude-sonnet-4-5",
-			ThinkingBudgetTokens: 4096,
+			Name:     "claude",
+			BaseURL:  "https://api.anthropic.example",
+			APIKey:   "provider-key",
+			Priority: 1,
+			Overrides: &config.ProviderOverrides{
+				Model: strPtr("claude-sonnet-4-5"),
+				Claude: &config.ClaudeOverrides{
+					ThinkingBudgetTokens: intPtr(4096),
+				},
+			},
 		},
 	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 
@@ -198,12 +214,16 @@ func TestCreateProxyRequest_SkipsOverridesForNonJSONRequests(t *testing.T) {
 
 	cp := newClientProxy(ClientOpenAI, config.ClientModeAuto, "", []config.Provider{
 		{
-			Name:            "openai",
-			BaseURL:         "https://api.openai.example",
-			APIKey:          "provider-key",
-			Priority:        1,
-			Model:           "gpt-5.4",
-			ReasoningEffort: "high",
+			Name:     "openai",
+			BaseURL:  "https://api.openai.example",
+			APIKey:   "provider-key",
+			Priority: 1,
+			Overrides: &config.ProviderOverrides{
+				Model: strPtr("gpt-5.4"),
+				OpenAI: &config.OpenAIOverrides{
+					ReasoningEffort: strPtr("high"),
+				},
+			},
 		},
 	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
 

@@ -31,9 +31,9 @@ func applyProviderRequestOverrides(original *http.Request, requestCtx RequestCon
 }
 
 func hasProviderRequestOverrides(provider config.Provider) bool {
-	return strings.TrimSpace(provider.Model) != "" ||
-		strings.TrimSpace(provider.ReasoningEffort) != "" ||
-		provider.ThinkingBudgetTokens > 0
+	return provider.ModelOverride() != "" ||
+		provider.OpenAIReasoningEffort() != "" ||
+		provider.ClaudeThinkingBudgetTokens() > 0
 }
 
 func isJSONRequest(req *http.Request) bool {
@@ -53,47 +53,64 @@ func isJSONRequest(req *http.Request) bool {
 }
 
 func applyProviderRequestOverridesToRoot(root map[string]any, requestCtx RequestContext, provider config.Provider) bool {
+	switch requestCtx.Family {
+	case ProtocolFamilyOpenAI:
+		return applyOpenAIProviderRequestOverrides(root, requestCtx, provider)
+	case ProtocolFamilyClaude:
+		return applyClaudeProviderRequestOverrides(root, requestCtx, provider)
+	default:
+		return false
+	}
+}
+
+func applyOpenAIProviderRequestOverrides(root map[string]any, requestCtx RequestContext, provider config.Provider) bool {
 	changed := false
-	model := strings.TrimSpace(provider.Model)
+	model := provider.ModelOverride()
+	if model != "" && isOpenAIGenerationCapability(requestCtx.Capability) {
+		root["model"] = model
+		changed = true
+	}
+
+	reasoningEffort := provider.OpenAIReasoningEffort()
+	if reasoningEffort == "" {
+		return changed
+	}
+
+	switch requestCtx.Capability {
+	case CapabilityOpenAIResponses:
+		reasoning, _ := root["reasoning"].(map[string]any)
+		if reasoning == nil {
+			reasoning = make(map[string]any)
+		}
+		reasoning["effort"] = reasoningEffort
+		root["reasoning"] = reasoning
+		return true
+	default:
+		if _, ok := root["reasoning_effort"]; ok {
+			root["reasoning_effort"] = reasoningEffort
+			return true
+		}
+	}
+
+	return changed
+}
+
+func applyClaudeProviderRequestOverrides(root map[string]any, requestCtx RequestContext, provider config.Provider) bool {
+	if requestCtx.Capability != CapabilityClaudeMessages && requestCtx.Capability != CapabilityClaudeCountTokens {
+		return false
+	}
+
+	changed := false
+	model := provider.ModelOverride()
 	if model != "" {
-		switch requestCtx.Family {
-		case ProtocolFamilyOpenAI:
-			if isOpenAIGenerationCapability(requestCtx.Capability) {
-				root["model"] = model
-				changed = true
-			}
-		case ProtocolFamilyClaude:
-			if requestCtx.Capability == CapabilityClaudeMessages || requestCtx.Capability == CapabilityClaudeCountTokens {
-				root["model"] = model
-				changed = true
-			}
-		}
+		root["model"] = model
+		changed = true
 	}
 
-	reasoningEffort := strings.TrimSpace(provider.ReasoningEffort)
-	if reasoningEffort != "" && requestCtx.Family == ProtocolFamilyOpenAI {
-		switch requestCtx.Capability {
-		case CapabilityOpenAIResponses:
-			reasoning, _ := root["reasoning"].(map[string]any)
-			if reasoning == nil {
-				reasoning = make(map[string]any)
-			}
-			reasoning["effort"] = reasoningEffort
-			root["reasoning"] = reasoning
-			changed = true
-		default:
-			if _, ok := root["reasoning_effort"]; ok {
-				root["reasoning_effort"] = reasoningEffort
-				changed = true
-			}
-		}
-	}
-
-	if provider.ThinkingBudgetTokens > 0 &&
-		(requestCtx.Capability == CapabilityClaudeMessages || requestCtx.Capability == CapabilityClaudeCountTokens) {
+	if thinkingBudgetTokens := provider.ClaudeThinkingBudgetTokens(); thinkingBudgetTokens > 0 {
 		root["thinking"] = map[string]any{
 			"type":          "enabled",
-			"budget_tokens": provider.ThinkingBudgetTokens,
+			"budget_tokens": thinkingBudgetTokens,
 		}
 		changed = true
 	}

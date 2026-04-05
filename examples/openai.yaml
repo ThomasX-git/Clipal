@@ -11,8 +11,10 @@ providers:
   - name: "openai-compatible"
     base_url: "https://api.openai.com"
     api_key: "sk-xxx"
-    model: "gpt-5.4"
-    reasoning_effort: "high"
+    overrides:
+      model: "gpt-5.4"
+      openai:
+        reasoning_effort: "high"
     priority: 1
     enabled: true
 

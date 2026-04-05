@@ -12,6 +12,10 @@ import (
 
 func boolPtr(v bool) *bool { return &v }
 
+func stringPtr(v string) *string { return &v }
+
+func intPtr(v int) *int { return &v }
+
 func TestFormatClientConfigYAML_QuotesSpacingAndTiers(t *testing.T) {
 	cc := config.ClientConfig{
 		Providers: []config.Provider{
@@ -247,22 +251,31 @@ func TestFormatClientConfigYAML_IncludesProviderOverrides(t *testing.T) {
 	cc := config.ClientConfig{
 		Providers: []config.Provider{
 			{
-				Name:                 "openai-primary",
-				BaseURL:              "https://openai.example",
-				APIKey:               "key-1",
-				Priority:             1,
-				Enabled:              boolPtr(true),
-				Model:                "gpt-5.4",
-				ReasoningEffort:      "high",
-				ThinkingBudgetTokens: 1024,
+				Name:     "openai-primary",
+				BaseURL:  "https://openai.example",
+				APIKey:   "key-1",
+				Priority: 1,
+				Enabled:  boolPtr(true),
+				Overrides: &config.ProviderOverrides{
+					Model: stringPtr("gpt-5.4"),
+					OpenAI: &config.OpenAIOverrides{
+						ReasoningEffort: stringPtr("high"),
+					},
+					Claude: &config.ClaudeOverrides{
+						ThinkingBudgetTokens: intPtr(1024),
+					},
+				},
 			},
 		},
 	}
 
 	got := string(formatClientConfigYAML("codex", cc))
 	for _, want := range []string{
+		`overrides:`,
 		`model: "gpt-5.4"`,
+		`openai:`,
 		`reasoning_effort: "high"`,
+		`claude:`,
 		`thinking_budget_tokens: 1024`,
 	} {
 		if !strings.Contains(got, want) {
@@ -274,14 +287,17 @@ func TestFormatClientConfigYAML_IncludesProviderOverrides(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(got), &parsed); err != nil {
 		t.Fatalf("yaml.Unmarshal: %v\n%s", err, got)
 	}
-	if parsed.Providers[0].Model != "gpt-5.4" {
-		t.Fatalf("model = %q", parsed.Providers[0].Model)
+	if parsed.Providers[0].Overrides == nil {
+		t.Fatalf("expected overrides after round-trip")
 	}
-	if parsed.Providers[0].ReasoningEffort != "high" {
-		t.Fatalf("reasoning_effort = %q", parsed.Providers[0].ReasoningEffort)
+	if got := parsed.Providers[0].ModelOverride(); got != "gpt-5.4" {
+		t.Fatalf("model = %q", got)
 	}
-	if parsed.Providers[0].ThinkingBudgetTokens != 1024 {
-		t.Fatalf("thinking_budget_tokens = %d", parsed.Providers[0].ThinkingBudgetTokens)
+	if got := parsed.Providers[0].OpenAIReasoningEffort(); got != "high" {
+		t.Fatalf("reasoning_effort = %q", got)
+	}
+	if got := parsed.Providers[0].ClaudeThinkingBudgetTokens(); got != 1024 {
+		t.Fatalf("thinking_budget_tokens = %d", got)
 	}
 }
 
