@@ -217,17 +217,17 @@
                                 <span class="provider-card__detail-label" x-text="t('providers.apiKeys')"></span>
                                 <span class="provider-card__detail-value" x-text="configuredKeyCountLabel(provider.key_count || 0)"></span>
                             </div>
-                            <div class="provider-card__detail" x-show="provider.model">
+                            <div class="provider-card__detail" x-show="provider.overrides && provider.overrides.model">
                                 <span class="provider-card__detail-label" x-text="t('providers.model')"></span>
-                                <span class="provider-card__detail-value" x-text="provider.model"></span>
+                                <span class="provider-card__detail-value" x-text="provider.overrides.model"></span>
                             </div>
-                            <div class="provider-card__detail" x-show="provider.reasoning_effort">
+                            <div class="provider-card__detail" x-show="provider.overrides && provider.overrides.openai && provider.overrides.openai.reasoning_effort">
                                 <span class="provider-card__detail-label" x-text="t('providers.reasoningEffort')"></span>
-                                <span class="provider-card__detail-value" x-text="provider.reasoning_effort"></span>
+                                <span class="provider-card__detail-value" x-text="provider.overrides.openai.reasoning_effort"></span>
                             </div>
-                            <div class="provider-card__detail" x-show="Number(provider.thinking_budget_tokens || 0) > 0">
+                            <div class="provider-card__detail" x-show="provider.overrides && provider.overrides.claude && provider.overrides.claude.thinking_budget_tokens > 0">
                                 <span class="provider-card__detail-label" x-text="t('providers.thinkingBudgetTokens')"></span>
-                                <span class="provider-card__detail-value" x-text="provider.thinking_budget_tokens"></span>
+                                <span class="provider-card__detail-value" x-text="provider.overrides.claude.thinking_budget_tokens"></span>
                             </div>
                         </div>
                     </div>

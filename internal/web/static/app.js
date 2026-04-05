@@ -34,6 +34,8 @@ function app() {
                     reset: 'Reset',
                     export: 'Export',
                     cancel: 'Cancel',
+                    show: 'Show',
+                    hide: 'Hide',
                     refresh: 'Refresh',
                     working: 'Working...',
                     enabled: 'Enabled',
@@ -111,11 +113,11 @@ function app() {
                         nameHint: 'Letters, numbers, dot (.), underscore (_), and hyphen (-).',
                         baseUrl: 'Base URL *',
                         model: 'Model Override',
-                        modelHint: 'Leave empty to keep the client-provided model.',
+                        modelHint: 'Leave empty to keep the request model.',
                         reasoningEffort: 'Reasoning Effort',
-                        reasoningEffortHint: 'Applied to OpenAI Responses as reasoning.effort.',
+                        reasoningEffortHint: 'Used as OpenAI Responses reasoning.effort.',
                         thinkingBudgetTokens: 'Thinking Budget Tokens',
-                        thinkingBudgetTokensHint: 'Applied to Claude thinking.budget_tokens. Use 0 to clear.',
+                        thinkingBudgetTokensHint: 'Use 0 to clear Claude thinking.budget_tokens.',
                         apiKeys: 'API Keys',
                         apiKeysRequired: 'API Keys *',
                         onePerLine: 'One API key per line',
@@ -124,6 +126,10 @@ function app() {
                         savedAsMultiple: '2+ lines -> api_keys',
                         keepExistingKey: 'Leave empty to keep the current configured key.',
                         keepExistingKeys: 'Leave empty to keep the current {count} configured keys.',
+                        overridesTitle: 'Advanced Overrides',
+                        overridesOptional: 'Optional',
+                        overridesSummaryEmpty: 'Model override, provider-specific request tuning',
+                        overridesPanelHint: 'Optional request-level tuning for this provider.',
                         priority: 'Priority',
                         priorityHint: 'Smaller numbers are tried first.',
                         saveProvider: 'Save Provider'
@@ -317,6 +323,8 @@ function app() {
                     reset: '重置',
                     export: '导出',
                     cancel: '取消',
+                    show: '展开',
+                    hide: '收起',
                     refresh: '刷新',
                     working: '处理中...',
                     enabled: '已启用',
@@ -394,11 +402,11 @@ function app() {
                         nameHint: '允许字母、数字、点号 (.)、下划线 (_) 和连字符 (-)。',
                         baseUrl: 'Base URL *',
                         model: '模型覆盖',
-                        modelHint: '留空则沿用客户端请求里的模型。',
+                        modelHint: '留空则沿用请求里的模型。',
                         reasoningEffort: '思考强度',
-                        reasoningEffortHint: '会写入 OpenAI Responses 的 reasoning.effort。',
+                        reasoningEffortHint: '写入 OpenAI Responses 的 reasoning.effort。',
                         thinkingBudgetTokens: '思考预算 Tokens',
-                        thinkingBudgetTokensHint: '会写入 Claude 的 thinking.budget_tokens。填 0 表示清空。',
+                        thinkingBudgetTokensHint: '填 0 清空 Claude 的 thinking.budget_tokens。',
                         apiKeys: 'API Keys',
                         apiKeysRequired: 'API Keys *',
                         onePerLine: '每行一个 API Key',
@@ -406,6 +414,10 @@ function app() {
                         savedAsSingle: '1 行 -> api_key',
                         savedAsMultiple: '2 行及以上 -> api_keys',
                         keepExistingKeys: '留空则保留当前已配置的 {count} 个 key。',
+                        overridesTitle: '高级覆盖',
+                        overridesOptional: '可选',
+                        overridesSummaryEmpty: '模型覆盖与 Provider 请求调优',
+                        overridesPanelHint: '仅在这个 Provider 需要请求级调优时再填写。',
                         priority: '优先级',
                         priorityHint: '数字越小越先尝试。',
                         saveProvider: '保存 Provider'
@@ -586,7 +598,8 @@ function app() {
         providers: [],
         clientConfig: {
             mode: 'auto',
-            pinned_provider: ''
+            pinned_provider: '',
+            override_support: null
         },
         // Keep a stable object shape so Alpine x-model bindings don't explode
         // during the initial render (before loadGlobalConfig completes).
@@ -1436,16 +1449,50 @@ function app() {
             return this.tf('modal.provider.keepExistingKeys', { count });
         },
 
+        providerOverrideSupport() {
+            const support = this.clientConfig && this.clientConfig.override_support;
+            if (!support || typeof support !== 'object') {
+                return this.defaultProviderOverrideSupport();
+            }
+            return {
+                model: !!support.model,
+                openai: {
+                    reasoning_effort: !!(support.openai && support.openai.reasoning_effort)
+                },
+                claude: {
+                    thinking_budget_tokens: !!(support.claude && support.claude.thinking_budget_tokens)
+                }
+            };
+        },
+
+        defaultProviderOverrideSupport() {
+            return {
+                model: false,
+                openai: {
+                    reasoning_effort: false
+                },
+                claude: {
+                    thinking_budget_tokens: false
+                }
+            };
+        },
+
         providerSupportsModelOverride() {
-            return this.selectedClient === 'openai' || this.selectedClient === 'claude';
+            return this.providerOverrideSupport().model;
         },
 
         providerSupportsReasoningEffort() {
-            return this.selectedClient === 'openai';
+            return this.providerOverrideSupport().openai.reasoning_effort;
         },
 
         providerSupportsThinkingBudget() {
-            return this.selectedClient === 'claude';
+            return this.providerOverrideSupport().claude.thinking_budget_tokens;
+        },
+
+        providerHasAnyOverrideSupport() {
+            return this.providerSupportsModelOverride()
+                || this.providerSupportsReasoningEffort()
+                || this.providerSupportsThinkingBudget();
         },
 
         normalizeThinkingBudgetTokens(value) {
@@ -1651,7 +1698,14 @@ function app() {
                     this.apiCall(`/api/client-config/${this.selectedClient}`, {}, true)
                 ]);
                 this.providers = providers || [];
-                this.clientConfig = { ...this.clientConfig, ...(clientCfg || {}) };
+                this.clientConfig = {
+                    ...this.clientConfig,
+                    ...(clientCfg || {}),
+                    override_support: {
+                        ...this.defaultProviderOverrideSupport(),
+                        ...((clientCfg && clientCfg.override_support) ? clientCfg.override_support : {})
+                    }
+                };
             } catch (error) {
                 console.error('Failed to load providers:', error);
                 this.providers = [];
@@ -1803,14 +1857,22 @@ function app() {
                     priority: this.providerForm.priority,
                     enabled: this.providerForm.enabled
                 };
+                const overrides = {};
                 if (this.providerSupportsModelOverride()) {
-                    payload.model = String(this.providerForm.model || '');
+                    overrides.model = String(this.providerForm.model || '');
                 }
                 if (this.providerSupportsReasoningEffort()) {
-                    payload.reasoning_effort = String(this.providerForm.reasoning_effort || '');
+                    overrides.openai = {
+                        reasoning_effort: String(this.providerForm.reasoning_effort || '')
+                    };
                 }
                 if (this.providerSupportsThinkingBudget()) {
-                    payload.thinking_budget_tokens = this.normalizeThinkingBudgetTokens(this.providerForm.thinking_budget_tokens);
+                    overrides.claude = {
+                        thinking_budget_tokens: this.normalizeThinkingBudgetTokens(this.providerForm.thinking_budget_tokens)
+                    };
+                }
+                if (Object.keys(overrides).length > 0) {
+                    payload.overrides = overrides;
                 }
                 const keys = String(this.providerForm.api_keys_text || '')
                     .split('\n')
@@ -1863,9 +1925,9 @@ function app() {
             this.providerForm = {
                 name: provider.name,
                 base_url: provider.base_url,
-                model: String(provider.model || ''),
-                reasoning_effort: String(provider.reasoning_effort || ''),
-                thinking_budget_tokens: Number(provider.thinking_budget_tokens || 0),
+                model: String((provider.overrides && provider.overrides.model) || ''),
+                reasoning_effort: String((provider.overrides && provider.overrides.openai && provider.overrides.openai.reasoning_effort) || ''),
+                thinking_budget_tokens: Number((provider.overrides && provider.overrides.claude && provider.overrides.claude.thinking_budget_tokens) || 0),
                 api_keys_text: '',
                 priority: provider.priority,
                 enabled: !!provider.enabled
