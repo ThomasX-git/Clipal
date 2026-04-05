@@ -119,17 +119,148 @@ const (
 	ClientModeManual ClientMode = "manual"
 )
 
+type ProviderOverrides struct {
+	Model  *string          `yaml:"model,omitempty"`
+	OpenAI *OpenAIOverrides `yaml:"openai,omitempty"`
+	Claude *ClaudeOverrides `yaml:"claude,omitempty"`
+}
+
+type OpenAIOverrides struct {
+	ReasoningEffort *string `yaml:"reasoning_effort,omitempty"`
+}
+
+type ClaudeOverrides struct {
+	ThinkingBudgetTokens *int `yaml:"thinking_budget_tokens,omitempty"`
+}
+
+type providerYAML struct {
+	Name                 string             `yaml:"name"`
+	BaseURL              string             `yaml:"base_url"`
+	APIKey               string             `yaml:"api_key,omitempty"`
+	APIKeys              []string           `yaml:"api_keys,omitempty"`
+	Priority             int                `yaml:"priority"`
+	Enabled              *bool              `yaml:"enabled,omitempty"`
+	Overrides            *ProviderOverrides `yaml:"overrides,omitempty"`
+	Model                string             `yaml:"model,omitempty"`
+	ReasoningEffort      string             `yaml:"reasoning_effort,omitempty"`
+	ThinkingBudgetTokens int                `yaml:"thinking_budget_tokens,omitempty"`
+}
+
 // Provider represents an API provider configuration
 type Provider struct {
-	Name                 string   `yaml:"name"`
-	BaseURL              string   `yaml:"base_url"`
-	APIKey               string   `yaml:"api_key,omitempty"`
-	APIKeys              []string `yaml:"api_keys,omitempty"`
-	Priority             int      `yaml:"priority"`
-	Enabled              *bool    `yaml:"enabled,omitempty"`
-	Model                string   `yaml:"model,omitempty"`
-	ReasoningEffort      string   `yaml:"reasoning_effort,omitempty"`
-	ThinkingBudgetTokens int      `yaml:"thinking_budget_tokens,omitempty"`
+	Name      string             `yaml:"name"`
+	BaseURL   string             `yaml:"base_url"`
+	APIKey    string             `yaml:"api_key,omitempty"`
+	APIKeys   []string           `yaml:"api_keys,omitempty"`
+	Priority  int                `yaml:"priority"`
+	Enabled   *bool              `yaml:"enabled,omitempty"`
+	Overrides *ProviderOverrides `yaml:"-"`
+}
+
+func (p *Provider) UnmarshalYAML(value *yaml.Node) error {
+	var raw providerYAML
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	overrides := NormalizeProviderOverrides(raw.Overrides)
+	if overrides == nil {
+		overrides = &ProviderOverrides{}
+	}
+	if trimmed := strings.TrimSpace(raw.Model); trimmed != "" && overrides.Model == nil {
+		overrides.Model = ptr(trimmed)
+	}
+	if trimmed := strings.TrimSpace(raw.ReasoningEffort); trimmed != "" {
+		if overrides.OpenAI == nil {
+			overrides.OpenAI = &OpenAIOverrides{}
+		}
+		if overrides.OpenAI.ReasoningEffort == nil {
+			overrides.OpenAI.ReasoningEffort = ptr(trimmed)
+		}
+	}
+	if raw.ThinkingBudgetTokens != 0 {
+		if overrides.Claude == nil {
+			overrides.Claude = &ClaudeOverrides{}
+		}
+		if overrides.Claude.ThinkingBudgetTokens == nil {
+			overrides.Claude.ThinkingBudgetTokens = ptr(raw.ThinkingBudgetTokens)
+		}
+	}
+	*p = Provider{
+		Name:      raw.Name,
+		BaseURL:   raw.BaseURL,
+		APIKey:    raw.APIKey,
+		APIKeys:   append([]string(nil), raw.APIKeys...),
+		Priority:  raw.Priority,
+		Enabled:   raw.Enabled,
+		Overrides: NormalizeProviderOverrides(overrides),
+	}
+	return nil
+}
+
+func (p Provider) MarshalYAML() (any, error) {
+	return providerYAML{
+		Name:      p.Name,
+		BaseURL:   p.BaseURL,
+		APIKey:    p.APIKey,
+		APIKeys:   append([]string(nil), p.APIKeys...),
+		Priority:  p.Priority,
+		Enabled:   p.Enabled,
+		Overrides: NormalizeProviderOverrides(p.Overrides),
+	}, nil
+}
+
+func (p Provider) ModelOverride() string {
+	if p.Overrides == nil || p.Overrides.Model == nil {
+		return ""
+	}
+	return strings.TrimSpace(*p.Overrides.Model)
+}
+
+func (p Provider) OpenAIReasoningEffort() string {
+	if p.Overrides == nil || p.Overrides.OpenAI == nil || p.Overrides.OpenAI.ReasoningEffort == nil {
+		return ""
+	}
+	return strings.TrimSpace(*p.Overrides.OpenAI.ReasoningEffort)
+}
+
+func (p Provider) ClaudeThinkingBudgetTokens() int {
+	if p.Overrides == nil || p.Overrides.Claude == nil || p.Overrides.Claude.ThinkingBudgetTokens == nil {
+		return 0
+	}
+	return *p.Overrides.Claude.ThinkingBudgetTokens
+}
+
+func NormalizeProviderOverrides(overrides *ProviderOverrides) *ProviderOverrides {
+	if overrides == nil {
+		return nil
+	}
+
+	var normalized ProviderOverrides
+	if overrides.Model != nil {
+		trimmed := strings.TrimSpace(*overrides.Model)
+		if trimmed != "" {
+			normalized.Model = ptr(trimmed)
+		}
+	}
+	if overrides.OpenAI != nil && overrides.OpenAI.ReasoningEffort != nil {
+		trimmed := strings.TrimSpace(*overrides.OpenAI.ReasoningEffort)
+		if trimmed != "" {
+			normalized.OpenAI = &OpenAIOverrides{
+				ReasoningEffort: ptr(trimmed),
+			}
+		}
+	}
+	if overrides.Claude != nil && overrides.Claude.ThinkingBudgetTokens != nil {
+		if *overrides.Claude.ThinkingBudgetTokens != 0 {
+			normalized.Claude = &ClaudeOverrides{
+				ThinkingBudgetTokens: ptr(*overrides.Claude.ThinkingBudgetTokens),
+			}
+		}
+	}
+	if normalized.Model == nil && normalized.OpenAI == nil && normalized.Claude == nil {
+		return nil
+	}
+	return &normalized
 }
 
 // IsEnabled returns whether the provider is enabled (default true)
@@ -471,8 +602,7 @@ func applyClientDefaults(cc *ClientConfig) {
 		}
 		cc.Providers[i].APIKey = strings.TrimSpace(cc.Providers[i].APIKey)
 		cc.Providers[i].APIKeys = cc.Providers[i].NormalizedAPIKeys()
-		cc.Providers[i].Model = strings.TrimSpace(cc.Providers[i].Model)
-		cc.Providers[i].ReasoningEffort = strings.TrimSpace(cc.Providers[i].ReasoningEffort)
+		cc.Providers[i].Overrides = NormalizeProviderOverrides(cc.Providers[i].Overrides)
 		if len(cc.Providers[i].APIKeys) == 1 {
 			cc.Providers[i].APIKey = cc.Providers[i].APIKeys[0]
 			cc.Providers[i].APIKeys = nil
@@ -679,11 +809,32 @@ func validateProviders(clientName string, providers []Provider) error {
 		if p.Priority < 1 {
 			return fmt.Errorf("%s provider %s: priority must be >= 1", clientName, p.Name)
 		}
-		if p.ThinkingBudgetTokens < 0 {
+		if !providerOverridesSupportedForClient(clientName, p.Overrides) {
+			return fmt.Errorf("%s provider %s: unsupported overrides for client", clientName, p.Name)
+		}
+		if p.ClaudeThinkingBudgetTokens() < 0 {
 			return fmt.Errorf("%s provider %s: thinking_budget_tokens must be >= 0", clientName, p.Name)
 		}
 	}
 	return nil
+}
+
+func providerOverridesSupportedForClient(clientName string, overrides *ProviderOverrides) bool {
+	if overrides == nil {
+		return true
+	}
+	switch clientName {
+	case "openai":
+		return overrides.Model == nil && overrides.OpenAI == nil && overrides.Claude == nil ||
+			overrides.Claude == nil
+	case "claude":
+		return overrides.Model == nil && overrides.OpenAI == nil && overrides.Claude == nil ||
+			overrides.OpenAI == nil
+	case "gemini":
+		return overrides == nil
+	default:
+		return false
+	}
 }
 
 func validateRoutingConfig(rc RoutingConfig) error {

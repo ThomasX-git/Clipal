@@ -184,8 +184,9 @@ func (a *API) HandleGetClientConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, ClientConfigResponse{
-		Mode:           string(cc.Mode),
-		PinnedProvider: cc.PinnedProvider,
+		Mode:            string(cc.Mode),
+		PinnedProvider:  cc.PinnedProvider,
+		OverrideSupport: toProviderOverrideSupport(providerOverrideSupportForClient(clientType)),
 	})
 }
 
@@ -251,10 +252,9 @@ func (a *API) HandleAddProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
-	req.Model = trimStringPtr(req.Model)
-	req.ReasoningEffort = trimStringPtr(req.ReasoningEffort)
-	if req.ThinkingBudgetTokens != nil && *req.ThinkingBudgetTokens < 0 {
-		writeError(w, "thinking_budget_tokens must be >= 0", http.StatusBadRequest)
+	req.Overrides = normalizeProviderOverrideRequest(req.Overrides)
+	if err := validateProviderOverrideRequest(clientType, req.Overrides); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -348,6 +348,11 @@ func (a *API) HandleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
+	req.Overrides = normalizeProviderOverrideRequest(req.Overrides)
+	if err := validateProviderOverrideRequest(clientType, req.Overrides); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	// Normalize/validate optional fields.
 	if strings.TrimSpace(req.Name) != "" {
@@ -363,12 +368,6 @@ func (a *API) HandleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-	}
-	req.Model = trimStringPtr(req.Model)
-	req.ReasoningEffort = trimStringPtr(req.ReasoningEffort)
-	if req.ThinkingBudgetTokens != nil && *req.ThinkingBudgetTokens < 0 {
-		writeError(w, "thinking_budget_tokens must be >= 0", http.StatusBadRequest)
-		return
 	}
 	keys, err := normalizeProviderKeys(req)
 	if err != nil {
@@ -912,19 +911,105 @@ func trimStringPtr(v *string) *string {
 	return &trimmed
 }
 
+func ptr[T any](v T) *T {
+	return &v
+}
+
+type providerOverrideSupport struct {
+	Model  bool
+	OpenAI struct {
+		ReasoningEffort bool
+	}
+	Claude struct {
+		ThinkingBudgetTokens bool
+	}
+}
+
+func providerOverrideSupportForClient(clientType string) providerOverrideSupport {
+	var support providerOverrideSupport
+	switch canonical, ok := config.CanonicalClientType(clientType); {
+	case ok && canonical == "openai":
+		support.Model = true
+		support.OpenAI.ReasoningEffort = true
+	case ok && canonical == "claude":
+		support.Model = true
+		support.Claude.ThinkingBudgetTokens = true
+	}
+	return support
+}
+
+func normalizeProviderOverrideRequest(overrides *ProviderOverridesRequest) *ProviderOverridesRequest {
+	if overrides == nil {
+		return nil
+	}
+
+	normalized := &ProviderOverridesRequest{
+		Model: trimStringPtr(overrides.Model),
+	}
+	if overrides.OpenAI != nil && overrides.OpenAI.ReasoningEffort != nil {
+		normalized.OpenAI = &OpenAIProviderOverridesRequest{
+			ReasoningEffort: trimStringPtr(overrides.OpenAI.ReasoningEffort),
+		}
+	}
+	if overrides.Claude != nil && overrides.Claude.ThinkingBudgetTokens != nil {
+		normalized.Claude = &ClaudeProviderOverridesRequest{
+			ThinkingBudgetTokens: ptr(*overrides.Claude.ThinkingBudgetTokens),
+		}
+	}
+	if normalized.Model == nil && normalized.OpenAI == nil && normalized.Claude == nil {
+		return nil
+	}
+	return normalized
+}
+
+func validateProviderOverrideRequest(clientType string, overrides *ProviderOverridesRequest) error {
+	if overrides == nil {
+		return nil
+	}
+	if canonical, ok := config.CanonicalClientType(clientType); ok {
+		clientType = canonical
+	}
+	support := providerOverrideSupportForClient(clientType)
+	if overrides.Model != nil && !support.Model {
+		return fmt.Errorf("overrides.model is not supported for %s providers", clientType)
+	}
+	if overrides.OpenAI != nil && overrides.OpenAI.ReasoningEffort != nil && !support.OpenAI.ReasoningEffort {
+		return fmt.Errorf("overrides.openai.reasoning_effort is not supported for %s providers", clientType)
+	}
+	if overrides.Claude != nil && overrides.Claude.ThinkingBudgetTokens != nil {
+		if !support.Claude.ThinkingBudgetTokens {
+			return fmt.Errorf("overrides.claude.thinking_budget_tokens is not supported for %s providers", clientType)
+		}
+		if *overrides.Claude.ThinkingBudgetTokens < 0 {
+			return fmt.Errorf("thinking_budget_tokens must be >= 0")
+		}
+	}
+	return nil
+}
+
 func applyProviderOverrides(provider *config.Provider, req ProviderRequest) {
-	if provider == nil {
+	if provider == nil || req.Overrides == nil {
 		return
 	}
-	if req.Model != nil {
-		provider.Model = strings.TrimSpace(*req.Model)
+	if provider.Overrides == nil {
+		provider.Overrides = &config.ProviderOverrides{}
 	}
-	if req.ReasoningEffort != nil {
-		provider.ReasoningEffort = strings.TrimSpace(*req.ReasoningEffort)
+	if req.Overrides.Model != nil {
+		provider.Overrides.Model = ptr(strings.TrimSpace(*req.Overrides.Model))
 	}
-	if req.ThinkingBudgetTokens != nil {
-		provider.ThinkingBudgetTokens = *req.ThinkingBudgetTokens
+	if req.Overrides.OpenAI != nil && req.Overrides.OpenAI.ReasoningEffort != nil {
+		if provider.Overrides.OpenAI == nil {
+			provider.Overrides.OpenAI = &config.OpenAIOverrides{}
+		}
+		provider.Overrides.OpenAI.ReasoningEffort = ptr(strings.TrimSpace(*req.Overrides.OpenAI.ReasoningEffort))
 	}
+	if req.Overrides.Claude != nil && req.Overrides.Claude.ThinkingBudgetTokens != nil {
+		if provider.Overrides.Claude == nil {
+			provider.Overrides.Claude = &config.ClaudeOverrides{}
+		}
+		provider.Overrides.Claude.ThinkingBudgetTokens = ptr(*req.Overrides.Claude.ThinkingBudgetTokens)
+	}
+	provider.Overrides = config.NormalizeProviderOverrides(provider.Overrides)
 }
 
 func assignProviderKeys(provider *config.Provider, keys []string) {

@@ -128,11 +128,19 @@ providers:
 	if first == nil {
 		t.Fatalf("expected provider p1 in listing, got %#v", got)
 	}
-	if first["model"] != "gpt-5.4" {
-		t.Fatalf("expected model override in listing, got %v", first["model"])
+	overrides, ok := first["overrides"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected overrides object in listing, got %T", first["overrides"])
 	}
-	if first["reasoning_effort"] != "high" {
-		t.Fatalf("expected reasoning_effort override in listing, got %v", first["reasoning_effort"])
+	if overrides["model"] != "gpt-5.4" {
+		t.Fatalf("expected model override in listing, got %v", overrides["model"])
+	}
+	openaiOver, ok := overrides["openai"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected openai override in listing, got %T", overrides["openai"])
+	}
+	if openaiOver["reasoning_effort"] != "high" {
+		t.Fatalf("expected reasoning_effort override in listing, got %v", openaiOver["reasoning_effort"])
 	}
 }
 
@@ -181,11 +189,19 @@ providers:
 	if _, ok := p0["BaseURL"]; ok {
 		t.Fatalf("did not expect BaseURL in export")
 	}
-	if p0["model"] != "gpt-5.4" {
-		t.Fatalf("expected model override in export, got %v", p0["model"])
+	overrides, ok := p0["overrides"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected overrides object in export, got %T", p0["overrides"])
 	}
-	if p0["reasoning_effort"] != "medium" {
-		t.Fatalf("expected reasoning_effort in export, got %v", p0["reasoning_effort"])
+	if overrides["model"] != "gpt-5.4" {
+		t.Fatalf("expected model override in export, got %v", overrides["model"])
+	}
+	openaiOver, ok := overrides["openai"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected openai override in export, got %T", overrides["openai"])
+	}
+	if openaiOver["reasoning_effort"] != "medium" {
+		t.Fatalf("expected reasoning_effort in export, got %v", openaiOver["reasoning_effort"])
 	}
 }
 
@@ -343,8 +359,12 @@ func TestHandleAddProvider_AcceptsAPIKeys(t *testing.T) {
   "name": "p1",
   "base_url": "https://example.com",
   "api_keys": ["key1", "key2"],
-  "model": "gpt-5.4",
-  "reasoning_effort": "high",
+  "overrides": {
+    "model": "gpt-5.4",
+    "openai": {
+      "reasoning_effort": "high"
+    }
+  },
   "priority": 1,
   "enabled": true
 }`)
@@ -366,11 +386,40 @@ func TestHandleAddProvider_AcceptsAPIKeys(t *testing.T) {
 	if cfg.OpenAI.Providers[0].APIKey != "" {
 		t.Fatalf("expected multi-key provider to be persisted via api_keys")
 	}
-	if cfg.OpenAI.Providers[0].Model != "gpt-5.4" {
-		t.Fatalf("model = %q", cfg.OpenAI.Providers[0].Model)
+	if got := cfg.OpenAI.Providers[0].ModelOverride(); got != "gpt-5.4" {
+		t.Fatalf("model = %q", got)
 	}
-	if cfg.OpenAI.Providers[0].ReasoningEffort != "high" {
-		t.Fatalf("reasoning_effort = %q", cfg.OpenAI.Providers[0].ReasoningEffort)
+	if got := cfg.OpenAI.Providers[0].OpenAIReasoningEffort(); got != "high" {
+		t.Fatalf("reasoning_effort = %q", got)
+	}
+}
+
+func TestHandleAddProvider_RejectsUnsupportedOverrideFieldsForGemini(t *testing.T) {
+	dir := t.TempDir()
+	api := NewAPI(dir, "test", nil)
+
+	body := []byte(`{
+  "name": "g1",
+  "base_url": "https://gemini.example",
+  "api_key": "gemini-key",
+  "overrides": {
+    "model": "gemini-2.5-pro",
+    "openai": {
+      "reasoning_effort": "high"
+    },
+    "claude": {
+      "thinking_budget_tokens": 4096
+    }
+  },
+  "priority": 1,
+  "enabled": true
+}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/providers/gemini", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	api.HandleAddProvider(w, req)
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
 	}
 }
 
@@ -442,6 +491,60 @@ providers:
 	got := testutil.DecodeJSONMap(t, w.Body.Bytes())
 	if got["mode"] != "manual" || got["pinned_provider"] != "p1" {
 		t.Fatalf("body=%#v", got)
+	}
+	support, ok := got["override_support"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected override_support in response, got %#v", got)
+	}
+	openAI, ok := support["openai"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected openai override support in response, got %#v", support)
+	}
+	claude, ok := support["claude"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected claude override support in response, got %#v", support)
+	}
+	if support["model"] != true || openAI["reasoning_effort"] != true || claude["thinking_budget_tokens"] != false {
+		t.Fatalf("override_support=%#v", support)
+	}
+}
+
+func TestHandleGetClientConfig_ReturnsOverrideSupportForGemini(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "gemini.yaml"), []byte(`
+mode: auto
+providers:
+  - name: g1
+    base_url: https://gemini.example
+    api_key: key1
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	api := NewAPI(dir, "test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/client-config/gemini", nil)
+	w := httptest.NewRecorder()
+	api.HandleGetClientConfig(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	got := testutil.DecodeJSONMap(t, w.Body.Bytes())
+	support, ok := got["override_support"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected override_support in response, got %#v", got)
+	}
+	openAI, ok := support["openai"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected openai override support in response, got %#v", support)
+	}
+	claude, ok := support["claude"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected claude override support in response, got %#v", support)
+	}
+	if support["model"] != false || openAI["reasoning_effort"] != false || claude["thinking_budget_tokens"] != false {
+		t.Fatalf("override_support=%#v", support)
 	}
 }
 
@@ -516,8 +619,12 @@ providers:
   "name":"p3",
   "base_url":"https://three.example",
   "api_keys":["k3","k4"],
-  "model":"gpt-5.4-mini",
-  "reasoning_effort":"low",
+  "overrides":{
+    "model":"gpt-5.4-mini",
+    "openai":{
+      "reasoning_effort":"low"
+    }
+  },
   "priority":5,
   "enabled":false
 }`)))
@@ -553,11 +660,11 @@ providers:
 		if got := updated.KeyCount(); got != 2 {
 			t.Fatalf("key count=%d", got)
 		}
-		if updated.Model != "gpt-5.4-mini" {
-			t.Fatalf("model=%q", updated.Model)
+		if got := updated.ModelOverride(); got != "gpt-5.4-mini" {
+			t.Fatalf("model=%q", got)
 		}
-		if updated.ReasoningEffort != "low" {
-			t.Fatalf("reasoning_effort=%q", updated.ReasoningEffort)
+		if got := updated.OpenAIReasoningEffort(); got != "low" {
+			t.Fatalf("reasoning_effort=%q", got)
 		}
 	})
 }
@@ -570,8 +677,10 @@ providers:
   - name: p1
     base_url: https://one.example
     api_key: key1
-    model: claude-sonnet-4-5
-    thinking_budget_tokens: 4096
+    overrides:
+      model: claude-sonnet-4-5
+      claude:
+        thinking_budget_tokens: 4096
     priority: 1
 `), 0o600); err != nil {
 		t.Fatal(err)
@@ -579,8 +688,12 @@ providers:
 	api := NewAPI(dir, "test", nil)
 
 	req := httptest.NewRequest(http.MethodPut, "/api/providers/claude/p1", bytes.NewReader([]byte(`{
-  "model":"",
-  "thinking_budget_tokens":0
+  "overrides":{
+    "model":"",
+    "claude":{
+      "thinking_budget_tokens":0
+    }
+  }
 }`)))
 	w := httptest.NewRecorder()
 	api.HandleUpdateProvider(w, req)
@@ -592,11 +705,46 @@ providers:
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
-	if got := cfg.Claude.Providers[0].Model; got != "" {
+	if got := cfg.Claude.Providers[0].ModelOverride(); got != "" {
 		t.Fatalf("model = %q, want empty", got)
 	}
-	if got := cfg.Claude.Providers[0].ThinkingBudgetTokens; got != 0 {
+	if got := cfg.Claude.Providers[0].ClaudeThinkingBudgetTokens(); got != 0 {
 		t.Fatalf("thinking_budget_tokens = %d, want 0", got)
+	}
+	if cfg.Claude.Providers[0].Overrides != nil {
+		t.Fatalf("expected overrides to be pruned after clearing, got %#v", cfg.Claude.Providers[0].Overrides)
+	}
+}
+
+func TestHandleUpdateProvider_RejectsUnsupportedOverrideFieldsForGemini(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "gemini.yaml"), []byte(`
+mode: auto
+providers:
+  - name: g1
+    base_url: https://gemini.example
+    api_key: key1
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	api := NewAPI(dir, "test", nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/providers/gemini/g1", bytes.NewReader([]byte(`{
+  "overrides":{
+    "model":"gemini-2.5-pro",
+    "openai":{
+      "reasoning_effort":"high"
+    },
+    "claude":{
+      "thinking_budget_tokens":4096
+    }
+  }
+}`)))
+	w := httptest.NewRecorder()
+	api.HandleUpdateProvider(w, req)
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
 	}
 }
 

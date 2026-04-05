@@ -107,19 +107,60 @@ type ClientConfigRequest struct {
 }
 
 type ClientConfigResponse struct {
-	Mode           string `json:"mode"`
-	PinnedProvider string `json:"pinned_provider"`
+	Mode            string                  `json:"mode"`
+	PinnedProvider  string                  `json:"pinned_provider"`
+	OverrideSupport ProviderOverrideSupport `json:"override_support"`
+}
+
+type ProviderOverrideSupport struct {
+	Model  bool                          `json:"model"`
+	OpenAI OpenAIProviderOverrideSupport `json:"openai"`
+	Claude ClaudeProviderOverrideSupport `json:"claude"`
+}
+
+type OpenAIProviderOverrideSupport struct {
+	ReasoningEffort bool `json:"reasoning_effort"`
+}
+
+type ClaudeProviderOverrideSupport struct {
+	ThinkingBudgetTokens bool `json:"thinking_budget_tokens"`
+}
+
+type ProviderOverridesRequest struct {
+	Model  *string                         `json:"model,omitempty"`
+	OpenAI *OpenAIProviderOverridesRequest `json:"openai,omitempty"`
+	Claude *ClaudeProviderOverridesRequest `json:"claude,omitempty"`
+}
+
+type OpenAIProviderOverridesRequest struct {
+	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
+}
+
+type ClaudeProviderOverridesRequest struct {
+	ThinkingBudgetTokens *int `json:"thinking_budget_tokens,omitempty"`
+}
+
+type ProviderOverridesResponse struct {
+	Model  string                           `json:"model,omitempty"`
+	OpenAI *OpenAIProviderOverridesResponse `json:"openai,omitempty"`
+	Claude *ClaudeProviderOverridesResponse `json:"claude,omitempty"`
+}
+
+type OpenAIProviderOverridesResponse struct {
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+}
+
+type ClaudeProviderOverridesResponse struct {
+	ThinkingBudgetTokens int `json:"thinking_budget_tokens,omitempty"`
 }
 
 // ProviderRequest represents a request to create or update a provider
 type ProviderRequest struct {
-	Name                 string   `json:"name"`
-	BaseURL              string   `json:"base_url"`
-	APIKey               string   `json:"api_key,omitempty"`
-	APIKeys              []string `json:"api_keys,omitempty"`
-	Model                *string  `json:"model,omitempty"`
-	ReasoningEffort      *string  `json:"reasoning_effort,omitempty"`
-	ThinkingBudgetTokens *int     `json:"thinking_budget_tokens,omitempty"`
+	Name      string                    `json:"name"`
+	BaseURL   string                    `json:"base_url"`
+	APIKey    string                    `json:"api_key,omitempty"`
+	APIKeys   []string                  `json:"api_keys,omitempty"`
+	Overrides *ProviderOverridesRequest `json:"overrides,omitempty"`
 	// Priority is 1-based. Omit to keep existing value (on updates) or to
 	// auto-assign the next priority (on create).
 	Priority *int  `json:"priority,omitempty"`
@@ -128,14 +169,12 @@ type ProviderRequest struct {
 
 // ProviderResponse is returned for provider listings (never includes api_key).
 type ProviderResponse struct {
-	Name                 string `json:"name"`
-	BaseURL              string `json:"base_url"`
-	Priority             int    `json:"priority"`
-	Enabled              bool   `json:"enabled"`
-	KeyCount             int    `json:"key_count"`
-	Model                string `json:"model,omitempty"`
-	ReasoningEffort      string `json:"reasoning_effort,omitempty"`
-	ThinkingBudgetTokens int    `json:"thinking_budget_tokens,omitempty"`
+	Name      string                     `json:"name"`
+	BaseURL   string                     `json:"base_url"`
+	Priority  int                        `json:"priority"`
+	Enabled   bool                       `json:"enabled"`
+	KeyCount  int                        `json:"key_count"`
+	Overrides *ProviderOverridesResponse `json:"overrides,omitempty"`
 }
 
 // ReorderRequest represents a request to reorder providers
@@ -159,15 +198,13 @@ type ClientConfigExport struct {
 }
 
 type ProviderExport struct {
-	Name                 string   `json:"name"`
-	BaseURL              string   `json:"base_url"`
-	APIKey               string   `json:"api_key,omitempty"`
-	APIKeys              []string `json:"api_keys,omitempty"`
-	Priority             int      `json:"priority"`
-	Enabled              *bool    `json:"enabled,omitempty"`
-	Model                string   `json:"model,omitempty"`
-	ReasoningEffort      string   `json:"reasoning_effort,omitempty"`
-	ThinkingBudgetTokens int      `json:"thinking_budget_tokens,omitempty"`
+	Name      string                     `json:"name"`
+	BaseURL   string                     `json:"base_url"`
+	APIKey    string                     `json:"api_key,omitempty"`
+	APIKeys   []string                   `json:"api_keys,omitempty"`
+	Priority  int                        `json:"priority"`
+	Enabled   *bool                      `json:"enabled,omitempty"`
+	Overrides *ProviderOverridesResponse `json:"overrides,omitempty"`
 }
 
 // StatusResponse represents the system status
@@ -338,18 +375,41 @@ func toGlobalConfigResponse(gc config.GlobalConfig) GlobalConfigResponse {
 	}
 }
 
+func mapProviderOverridesResponse(p config.Provider) *ProviderOverridesResponse {
+	model := p.ModelOverride()
+	reasoning := p.OpenAIReasoningEffort()
+	thinking := p.ClaudeThinkingBudgetTokens()
+
+	if model == "" && reasoning == "" && thinking == 0 {
+		return nil
+	}
+
+	resp := &ProviderOverridesResponse{
+		Model: model,
+	}
+	if reasoning != "" {
+		resp.OpenAI = &OpenAIProviderOverridesResponse{
+			ReasoningEffort: reasoning,
+		}
+	}
+	if thinking > 0 {
+		resp.Claude = &ClaudeProviderOverridesResponse{
+			ThinkingBudgetTokens: thinking,
+		}
+	}
+	return resp
+}
+
 func toProviderResponses(providers []config.Provider) []ProviderResponse {
 	out := make([]ProviderResponse, 0, len(providers))
 	for _, p := range providers {
 		out = append(out, ProviderResponse{
-			Name:                 p.Name,
-			BaseURL:              p.BaseURL,
-			Priority:             p.Priority,
-			Enabled:              p.IsEnabled(),
-			KeyCount:             p.KeyCount(),
-			Model:                p.Model,
-			ReasoningEffort:      p.ReasoningEffort,
-			ThinkingBudgetTokens: p.ThinkingBudgetTokens,
+			Name:      p.Name,
+			BaseURL:   p.BaseURL,
+			Priority:  p.Priority,
+			Enabled:   p.IsEnabled(),
+			KeyCount:  p.KeyCount(),
+			Overrides: mapProviderOverridesResponse(p),
 		})
 	}
 	return out
@@ -359,21 +419,31 @@ func toClientConfigExport(cc config.ClientConfig) ClientConfigExport {
 	out := make([]ProviderExport, 0, len(cc.Providers))
 	for _, p := range cc.Providers {
 		out = append(out, ProviderExport{
-			Name:                 p.Name,
-			BaseURL:              p.BaseURL,
-			APIKey:               p.APIKey,
-			APIKeys:              append([]string(nil), p.APIKeys...),
-			Priority:             p.Priority,
-			Enabled:              p.Enabled,
-			Model:                p.Model,
-			ReasoningEffort:      p.ReasoningEffort,
-			ThinkingBudgetTokens: p.ThinkingBudgetTokens,
+			Name:      p.Name,
+			BaseURL:   p.BaseURL,
+			APIKey:    p.APIKey,
+			APIKeys:   append([]string(nil), p.APIKeys...),
+			Priority:  p.Priority,
+			Enabled:   p.Enabled,
+			Overrides: mapProviderOverridesResponse(p),
 		})
 	}
 	return ClientConfigExport{
 		Mode:           string(cc.Mode),
 		PinnedProvider: cc.PinnedProvider,
 		Providers:      out,
+	}
+}
+
+func toProviderOverrideSupport(s providerOverrideSupport) ProviderOverrideSupport {
+	return ProviderOverrideSupport{
+		Model: s.Model,
+		OpenAI: OpenAIProviderOverrideSupport{
+			ReasoningEffort: s.OpenAI.ReasoningEffort,
+		},
+		Claude: ClaudeProviderOverrideSupport{
+			ThinkingBudgetTokens: s.Claude.ThinkingBudgetTokens,
+		},
 	}
 }
 
