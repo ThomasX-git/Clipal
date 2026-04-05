@@ -493,3 +493,56 @@
         flex: 1 1 140px;
     }
 }
+
+/* Modal Form Grid Layout */
+.modal-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+.provider-overrides-group {
+    margin-top: 16px;
+    padding: 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+.provider-overrides-header {
+    margin-bottom: 16px;
+}
+.provider-overrides-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+.provider-overrides-title {
+    font-size: var(--text-sm);
+    font-weight: var(--font-bold);
+}
+.provider-overrides-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-tertiary);
+}
+.provider-overrides-intro {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+.provider-overrides-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.provider-overrides-field {
+    margin-bottom: 0;
+}
+
+@media (max-width: 640px) {
+    .modal-form-grid, .provider-overrides-grid {
+        grid-template-columns: 1fr;
+    }
+}

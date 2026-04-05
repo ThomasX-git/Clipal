@@ -808,25 +808,6 @@
                             placeholder="https://api.example.com">
                     </div>
 
-                    <div class="form-group" x-show="providerSupportsModelOverride()">
-                        <label class="form-label" x-text="t('modal.provider.model')"></label>
-                        <input type="text" x-model="providerForm.model" class="form-input">
-                        <div class="form-hint" x-text="t('modal.provider.modelHint')"></div>
-                    </div>
-
-                    <div class="form-group" x-show="providerSupportsReasoningEffort()">
-                        <label class="form-label" x-text="t('modal.provider.reasoningEffort')"></label>
-                        <input type="text" x-model="providerForm.reasoning_effort" class="form-input">
-                        <div class="form-hint" x-text="t('modal.provider.reasoningEffortHint')"></div>
-                    </div>
-
-                    <div class="form-group" x-show="providerSupportsThinkingBudget()">
-                        <label class="form-label" x-text="t('modal.provider.thinkingBudgetTokens')"></label>
-                        <input type="number" x-model.number="providerForm.thinking_budget_tokens" class="form-input" min="0"
-                            placeholder="0">
-                        <div class="form-hint" x-text="t('modal.provider.thinkingBudgetTokensHint')"></div>
-                    </div>
-
                     <div class="form-group">
                         <div class="form-field-header">
                             <label class="form-label" x-text="showEditProviderModal ? t('modal.provider.apiKeys') : t('modal.provider.apiKeysRequired')"></label>
@@ -844,18 +825,47 @@
                             x-text="providerEditKeyHint()"></div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label" x-text="t('modal.provider.priority')"></label>
-                        <input type="number" x-model.number="providerForm.priority" class="form-input" min="1">
-                        <div class="form-hint" x-text="t('modal.provider.priorityHint')"></div>
+                    <div class="modal-form-grid" style="margin-bottom: 24px;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label class="form-label" x-text="t('modal.provider.priority')"></label>
+                            <input type="number" x-model.number="providerForm.priority" class="form-input" min="1">
+                            <div class="form-hint" x-text="t('modal.provider.priorityHint')"></div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 0; display: flex; align-items: flex-start; padding-top: 30px;">
+                            <label class="checkbox-label">
+                                <input type="checkbox" x-model="providerForm.enabled">
+                                <span class="checkbox-text" x-text="t('common.enabled')"></span>
+                            </label>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" x-model="providerForm.enabled">
-                            <span class="checkbox-text" x-text="t('common.enabled')"></span>
-                        </label>
-                    </div>
+                    <section class="form-group provider-overrides-group" x-show="providerHasAnyOverrideSupport()">
+                        <div class="provider-overrides-header">
+                            <div class="provider-overrides-title-row">
+                                <span class="provider-overrides-title" x-text="t('modal.provider.overridesTitle')"></span>
+                                <span class="provider-overrides-badge" x-text="t('modal.provider.overridesOptional')"></span>
+                            </div>
+                            <div class="provider-overrides-intro" x-text="t('modal.provider.overridesPanelHint')"></div>
+                        </div>
+
+                        <div class="provider-overrides-grid">
+                            <div class="provider-overrides-field form-group" x-show="providerSupportsModelOverride()">
+                                <label class="form-label" x-text="t('modal.provider.model')"></label>
+                                <input type="text" x-model="providerForm.model" class="form-input" placeholder="gpt-5.4">
+                            </div>
+
+                            <div class="provider-overrides-field form-group" x-show="providerSupportsReasoningEffort()">
+                                <label class="form-label" x-text="t('modal.provider.reasoningEffort')"></label>
+                                <input type="text" x-model="providerForm.reasoning_effort" class="form-input" placeholder="high">
+                            </div>
+
+                            <div class="provider-overrides-field form-group" x-show="providerSupportsThinkingBudget()">
+                                <label class="form-label" x-text="t('modal.provider.thinkingBudgetTokens')"></label>
+                                <input type="number" x-model.number="providerForm.thinking_budget_tokens" class="form-input" min="0" placeholder="4096">
+                            </div>
+                        </div>
+                    </section>
                 </div>
                 <div class="modal-footer">
                     <button type="button" @click="closeModals()" class="btn btn-secondary" x-text="t('common.cancel')"></button>
