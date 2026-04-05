@@ -243,6 +243,48 @@ func TestFormatClientConfigYAML_RoundTripViaConfigLoadWithNormalizedKeys(t *test
 	}
 }
 
+func TestFormatClientConfigYAML_IncludesProviderOverrides(t *testing.T) {
+	cc := config.ClientConfig{
+		Providers: []config.Provider{
+			{
+				Name:                 "openai-primary",
+				BaseURL:              "https://openai.example",
+				APIKey:               "key-1",
+				Priority:             1,
+				Enabled:              boolPtr(true),
+				Model:                "gpt-5.4",
+				ReasoningEffort:      "high",
+				ThinkingBudgetTokens: 1024,
+			},
+		},
+	}
+
+	got := string(formatClientConfigYAML("codex", cc))
+	for _, want := range []string{
+		`model: "gpt-5.4"`,
+		`reasoning_effort: "high"`,
+		`thinking_budget_tokens: 1024`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected output to contain %q\n%s", want, got)
+		}
+	}
+
+	var parsed config.ClientConfig
+	if err := yaml.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v\n%s", err, got)
+	}
+	if parsed.Providers[0].Model != "gpt-5.4" {
+		t.Fatalf("model = %q", parsed.Providers[0].Model)
+	}
+	if parsed.Providers[0].ReasoningEffort != "high" {
+		t.Fatalf("reasoning_effort = %q", parsed.Providers[0].ReasoningEffort)
+	}
+	if parsed.Providers[0].ThinkingBudgetTokens != 1024 {
+		t.Fatalf("thinking_budget_tokens = %d", parsed.Providers[0].ThinkingBudgetTokens)
+	}
+}
+
 func TestFormatClientConfigYAML_EmptyProvidersStableOutput(t *testing.T) {
 	got := string(formatClientConfigYAML("codex", config.ClientConfig{}))
 	for _, want := range []string{

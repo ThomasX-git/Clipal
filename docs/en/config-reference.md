@@ -181,11 +181,16 @@ providers:
 | `api_keys` | array | one of two | Multiple API keys, used in order |
 | `priority` | int | no | Lower number = higher priority; omitted or `0` is treated as `1` |
 | `enabled` | bool | no | Defaults to `true` |
+| `model` | string | no | Force this provider to use a specific upstream model name for supported OpenAI and Claude requests |
+| `reasoning_effort` | string | no | OpenAI only. For `/v1/responses*`, Clipal writes `reasoning.effort`; for chat/completions it only replaces an existing `reasoning_effort` field |
+| `thinking_budget_tokens` | int | no | Claude only. Clipal writes `thinking = {type: "enabled", budget_tokens: ...}` on supported requests |
 
 ## Practical Defaults
 
 - Use `api_key` when you only have one key
 - Use `api_keys` when you want retries across multiple keys within the same provider
+- Use `model` when different upstream providers expose the same family under different model IDs
+- Use `reasoning_effort` and `thinking_budget_tokens` only when you want Clipal to override the client-sent defaults for that provider
 - For long-running background setups, this is a good default:
 
 ```yaml

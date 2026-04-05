@@ -181,11 +181,16 @@ providers:
 | `api_keys` | array | 二选一 | 多个 API Key，按顺序使用 |
 | `priority` | int | 否 | 数字越小优先级越高；省略或 `0` 时按 `1` 处理 |
 | `enabled` | bool | 否 | 是否启用，默认 `true` |
+| `model` | string | 否 | 对支持的 OpenAI / Claude 请求强制改写为这个上游模型名 |
+| `reasoning_effort` | string | 否 | 仅 OpenAI。对 `/v1/responses*` 写入 `reasoning.effort`；对 chat/completions 仅替换请求中已存在的 `reasoning_effort` |
+| `thinking_budget_tokens` | int | 否 | 仅 Claude。对支持的请求写入 `thinking = {type: "enabled", budget_tokens: ...}` |
 
 ## 使用建议
 
 - 只有一个 key 时用 `api_key`
 - 需要同 provider 多 key 轮转时用 `api_keys`
+- 不同上游对同一模型族使用不同模型 ID 时，可为该 provider 配置 `model`
+- 只有在你希望 Clipal 按 provider 覆盖客户端默认思考参数时，才配置 `reasoning_effort` 或 `thinking_budget_tokens`
 - 常驻后台运行时，建议：
 
 ```yaml

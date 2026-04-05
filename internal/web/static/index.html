@@ -217,6 +217,18 @@
                                 <span class="provider-card__detail-label" x-text="t('providers.apiKeys')"></span>
                                 <span class="provider-card__detail-value" x-text="configuredKeyCountLabel(provider.key_count || 0)"></span>
                             </div>
+                            <div class="provider-card__detail" x-show="provider.model">
+                                <span class="provider-card__detail-label" x-text="t('providers.model')"></span>
+                                <span class="provider-card__detail-value" x-text="provider.model"></span>
+                            </div>
+                            <div class="provider-card__detail" x-show="provider.reasoning_effort">
+                                <span class="provider-card__detail-label" x-text="t('providers.reasoningEffort')"></span>
+                                <span class="provider-card__detail-value" x-text="provider.reasoning_effort"></span>
+                            </div>
+                            <div class="provider-card__detail" x-show="Number(provider.thinking_budget_tokens || 0) > 0">
+                                <span class="provider-card__detail-label" x-text="t('providers.thinkingBudgetTokens')"></span>
+                                <span class="provider-card__detail-value" x-text="provider.thinking_budget_tokens"></span>
+                            </div>
                         </div>
                     </div>
                 </template>
@@ -794,6 +806,25 @@
                         <label class="form-label" x-text="t('modal.provider.baseUrl')"></label>
                         <input type="text" x-model="providerForm.base_url" class="form-input" required
                             placeholder="https://api.example.com">
+                    </div>
+
+                    <div class="form-group" x-show="providerSupportsModelOverride()">
+                        <label class="form-label" x-text="t('modal.provider.model')"></label>
+                        <input type="text" x-model="providerForm.model" class="form-input">
+                        <div class="form-hint" x-text="t('modal.provider.modelHint')"></div>
+                    </div>
+
+                    <div class="form-group" x-show="providerSupportsReasoningEffort()">
+                        <label class="form-label" x-text="t('modal.provider.reasoningEffort')"></label>
+                        <input type="text" x-model="providerForm.reasoning_effort" class="form-input">
+                        <div class="form-hint" x-text="t('modal.provider.reasoningEffortHint')"></div>
+                    </div>
+
+                    <div class="form-group" x-show="providerSupportsThinkingBudget()">
+                        <label class="form-label" x-text="t('modal.provider.thinkingBudgetTokens')"></label>
+                        <input type="number" x-model.number="providerForm.thinking_budget_tokens" class="form-input" min="0"
+                            placeholder="0">
+                        <div class="form-hint" x-text="t('modal.provider.thinkingBudgetTokensHint')"></div>
                     </div>
 
                     <div class="form-group">

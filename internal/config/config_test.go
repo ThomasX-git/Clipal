@@ -368,6 +368,95 @@ func TestValidate_ProviderAPIKeys_RejectsMixedForms(t *testing.T) {
 	}
 }
 
+func TestValidate_ProviderThinkingBudgetRejectsNegative(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Global: DefaultGlobalConfig(),
+		Claude: ClientConfig{
+			Mode: ClientModeAuto,
+			Providers: []Provider{
+				{
+					Name:                 "p1",
+					BaseURL:              "https://example.com",
+					APIKey:               "key1",
+					Priority:             1,
+					ThinkingBudgetTokens: -1,
+				},
+			},
+		},
+		OpenAI: ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
+	}
+
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "thinking_budget_tokens") {
+		t.Fatalf("err = %v, want thinking_budget_tokens validation error", err)
+	}
+}
+
+func TestLoad_ProviderOverridesRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeClientConfigFile(t, dir, "openai.yaml", `
+providers:
+  - name: openai-primary
+    base_url: https://openai.example
+    api_key: openai-key
+    model: " gpt-5.4 "
+    reasoning_effort: " high "
+    priority: 1
+`)
+	writeClientConfigFile(t, dir, "claude.yaml", `
+providers:
+  - name: claude-primary
+    base_url: https://claude.example
+    api_key: claude-key
+    model: claude-sonnet-4-5
+    thinking_budget_tokens: 2048
+    priority: 1
+`)
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.OpenAI.Providers[0].Model; got != "gpt-5.4" {
+		t.Fatalf("OpenAI model = %q", got)
+	}
+	if got := cfg.OpenAI.Providers[0].ReasoningEffort; got != "high" {
+		t.Fatalf("OpenAI reasoning_effort = %q", got)
+	}
+	if got := cfg.Claude.Providers[0].ThinkingBudgetTokens; got != 2048 {
+		t.Fatalf("Claude thinking_budget_tokens = %d", got)
+	}
+}
+
+func TestLoad_InvalidNegativeThinkingBudgetSurfacesDuringValidation(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeClientConfigFile(t, dir, "claude.yaml", `
+providers:
+  - name: claude-primary
+    base_url: https://claude.example
+    api_key: claude-key
+    thinking_budget_tokens: -1
+    priority: 1
+`)
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.Claude.Providers[0].ThinkingBudgetTokens; got != -1 {
+		t.Fatalf("ThinkingBudgetTokens = %d, want -1", got)
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "thinking_budget_tokens") {
+		t.Fatalf("Validate err = %v, want thinking_budget_tokens validation error", err)
+	}
+}
+
 func TestValidate_RejectsDuplicateProviderNamesPerClient(t *testing.T) {
 	t.Parallel()
 
