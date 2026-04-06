@@ -884,7 +884,10 @@
 
                     <div class="form-grid-full form-group provider-overrides-group"
                         x-show="providerHasAnyOverrideSupport()" style="margin-top: 0;">
-                        <div class="provider-overrides-header" x-text="t('modal.provider.overridesTitle')"></div>
+                        <div class="provider-overrides-header" style="display: flex; justify-content: space-between; align-items: baseline;">
+                            <span x-text="t('modal.provider.overridesTitle')"></span>
+                            <span style="font-size: 10px; text-transform: none; font-weight: normal; color: var(--text-tertiary); letter-spacing: 0;" x-text="t('modal.provider.overridesHint')"></span>
+                        </div>
 
                         <div class="provider-overrides-grid">
                             <div class="provider-overrides-field" x-show="providerSupportsModelOverride()">

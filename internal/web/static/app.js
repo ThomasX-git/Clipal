@@ -113,7 +113,7 @@ function app() {
                         nameHint: 'Letters, numbers, dot (.), underscore (_), and hyphen (-).',
                         baseUrl: 'Base URL *',
                         model: 'Model',
-                        modelHint: 'Keep request model.',
+                        modelHint: 'model-id',
                         reasoningEffort: 'Reasoning Effort',
                         reasoningEffortHint: 'Used as OpenAI Responses reasoning.effort.',
                         thinkingBudgetTokens: 'Thinking Budget',
@@ -127,9 +127,8 @@ function app() {
                         keepExistingKey: 'Leave empty to keep the current configured key.',
                         keepExistingKeys: 'Leave empty to keep the current {count} configured keys.',
                         overridesTitle: 'Overrides',
+                        overridesHint: 'Leave empty if no override needed',
                         overridesOptional: 'Optional',
-                        overridesSummaryEmpty: 'Model override, provider-specific request tuning',
-                        overridesPanelHint: 'Optional request-level tuning for this provider.',
                         priority: 'Priority',
                         priorityHint: 'Smaller numbers are tried first.',
                         saveProvider: 'Save Provider'
@@ -402,7 +401,7 @@ function app() {
                         nameHint: '允许字母、数字、点号 (.)、下划线 (_) 和连字符 (-)。',
                         baseUrl: 'Base URL *',
                         model: '模型',
-                        modelHint: '留空则不覆盖。',
+                        modelHint: 'model-id',
                         reasoningEffort: '思考强度',
                         reasoningEffortHint: '写入 OpenAI Responses 的 reasoning.effort。',
                         thinkingBudgetTokens: '思考预算',
@@ -414,10 +413,9 @@ function app() {
                         savedAsSingle: '1 行 -> api_key',
                         savedAsMultiple: '2 行及以上 -> api_keys',
                         keepExistingKeys: '留空则保留当前已配置的 {count} 个 key。',
-                        overridesTitle: 'Overrides',
+                        overridesTitle: '覆盖',
+                        overridesHint: '无需覆盖则留空',
                         overridesOptional: '可选',
-                        overridesSummaryEmpty: '模型覆盖与 Provider 请求调优',
-                        overridesPanelHint: '仅在这个 Provider 需要请求级调优时再填写。',
                         priority: '优先级',
                         priorityHint: '数字越小越先尝试。',
                         saveProvider: '保存 Provider'
@@ -788,7 +786,7 @@ function app() {
         async init() {
             this.initLocale();
             this.initTheme();
-            
+
             // Initial data load
             this.isLoading = true;
             try {
@@ -820,7 +818,7 @@ function app() {
         // Theme Management
         initTheme() {
             this.applyTheme(this.theme);
-            
+
             // Listen for system preference changes if in system mode
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
                 if (this.theme === 'system') {
@@ -838,9 +836,9 @@ function app() {
         },
 
         applyTheme(theme) {
-            const isDark = theme === 'dark' || 
+            const isDark = theme === 'dark' ||
                 (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-            
+
             if (isDark) {
                 document.documentElement.classList.add('dark');
             } else {
@@ -952,7 +950,7 @@ function app() {
             try {
                 // Minimum loading time to prevent flickering for fast requests
                 const start = Date.now();
-                
+
                 const response = await fetch(url, {
                     ...options,
                     headers: {
@@ -1611,7 +1609,7 @@ function app() {
         initSortable() {
             const el = document.getElementById('providers-list');
             if (!el || typeof Sortable === 'undefined') return;
-            
+
             if (this.sortableInstance) {
                 this.sortableInstance.destroy();
             }
