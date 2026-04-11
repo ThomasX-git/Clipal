@@ -706,7 +706,7 @@ func TestGetConfigDir_RespectsEnvironmentOverride(t *testing.T) {
 	}
 }
 
-func TestLoad_ProviderProxyModeDefaultsToInherit(t *testing.T) {
+func TestLoad_ProviderProxyModeDefaultsToDefault(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -722,11 +722,23 @@ providers:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := cfg.OpenAI.Providers[0].NormalizedProxyMode(); got != ProviderProxyModeInherit {
-		t.Fatalf("proxy mode = %q, want %q", got, ProviderProxyModeInherit)
+	if got := cfg.OpenAI.Providers[0].NormalizedProxyMode(); got != ProviderProxyModeDefault {
+		t.Fatalf("proxy mode = %q, want %q", got, ProviderProxyModeDefault)
 	}
 	if got := cfg.OpenAI.Providers[0].NormalizedProxyURL(); got != "" {
 		t.Fatalf("proxy url = %q, want empty", got)
+	}
+}
+
+func TestLoad_GlobalUpstreamProxyModeDefaultsToEnvironment(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := Load(t.TempDir())
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.Global.NormalizedUpstreamProxyMode(); got != GlobalUpstreamProxyModeEnvironment {
+		t.Fatalf("upstream proxy mode = %q, want %q", got, GlobalUpstreamProxyModeEnvironment)
 	}
 }
 
@@ -806,6 +818,14 @@ func TestValidate_ProviderProxySettings(t *testing.T) {
 			t.Fatalf("Validate err = %v", err)
 		}
 	})
+
+	t.Run("rejects removed inherit mode", func(t *testing.T) {
+		cfg := *base
+		cfg.OpenAI.Providers = []Provider{makeProvider(ProviderProxyMode("inherit"), "")}
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), `invalid proxy_mode "inherit"`) {
+			t.Fatalf("Validate err = %v", err)
+		}
+	})
 }
 
 func TestValidate_GlobalUpstreamProxySettings(t *testing.T) {
@@ -818,7 +838,7 @@ func TestValidate_GlobalUpstreamProxySettings(t *testing.T) {
 		Gemini: ClientConfig{Mode: ClientModeAuto},
 	}
 
-	cfg.Global.UpstreamProxyMode = ProviderProxyModeCustom
+	cfg.Global.UpstreamProxyMode = GlobalUpstreamProxyModeCustom
 	cfg.Global.UpstreamProxyURL = "http://127.0.0.1:7890"
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
@@ -838,4 +858,106 @@ func TestValidate_GlobalUpstreamProxySettings(t *testing.T) {
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "proxy_url scheme must be http, https, socks5, or socks5h") {
 		t.Fatalf("Validate err = %v", err)
 	}
+
+	cfg.Global.UpstreamProxyMode = GlobalUpstreamProxyMode("inherit")
+	cfg.Global.UpstreamProxyURL = ""
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), `invalid upstream_proxy_mode "inherit"`) {
+		t.Fatalf("Validate err = %v", err)
+	}
+}
+
+func TestApplyProviderProxySettings(t *testing.T) {
+	t.Parallel()
+
+	t.Run("create defaults to default mode", func(t *testing.T) {
+		var provider Provider
+		if err := ApplyProviderProxySettings(&provider, ProviderProxySettingsPatch{}, false); err != nil {
+			t.Fatalf("ApplyProviderProxySettings: %v", err)
+		}
+		if provider.ProxyMode != ProviderProxyModeDefault || provider.ProxyURL != "" {
+			t.Fatalf("provider = %#v", provider)
+		}
+	})
+
+	t.Run("update retains existing custom url", func(t *testing.T) {
+		provider := Provider{ProxyMode: ProviderProxyModeCustom, ProxyURL: "http://127.0.0.1:7890"}
+		mode := "custom"
+		if err := ApplyProviderProxySettings(&provider, ProviderProxySettingsPatch{Mode: &mode}, true); err != nil {
+			t.Fatalf("ApplyProviderProxySettings: %v", err)
+		}
+		if provider.ProxyMode != ProviderProxyModeCustom || provider.ProxyURL != "http://127.0.0.1:7890" {
+			t.Fatalf("provider = %#v", provider)
+		}
+	})
+
+	t.Run("update clears url on direct", func(t *testing.T) {
+		provider := Provider{ProxyMode: ProviderProxyModeCustom, ProxyURL: "http://127.0.0.1:7890"}
+		mode := "direct"
+		if err := ApplyProviderProxySettings(&provider, ProviderProxySettingsPatch{Mode: &mode}, true); err != nil {
+			t.Fatalf("ApplyProviderProxySettings: %v", err)
+		}
+		if provider.ProxyMode != ProviderProxyModeDirect || provider.ProxyURL != "" {
+			t.Fatalf("provider = %#v", provider)
+		}
+	})
+
+	t.Run("rejects default with url", func(t *testing.T) {
+		mode := "default"
+		rawURL := "http://127.0.0.1:7890"
+		if err := ApplyProviderProxySettings(&Provider{}, ProviderProxySettingsPatch{Mode: &mode, URL: &rawURL}, false); err == nil || !strings.Contains(err.Error(), "proxy_url requires proxy_mode custom") {
+			t.Fatalf("ApplyProviderProxySettings err = %v", err)
+		}
+	})
+
+	t.Run("rejects removed inherit mode", func(t *testing.T) {
+		mode := "inherit"
+		if err := ApplyProviderProxySettings(&Provider{}, ProviderProxySettingsPatch{Mode: &mode}, false); err == nil || !strings.Contains(err.Error(), "proxy_mode must be one of default, direct, custom") {
+			t.Fatalf("ApplyProviderProxySettings err = %v", err)
+		}
+	})
+}
+
+func TestApplyUpstreamProxySettings(t *testing.T) {
+	t.Parallel()
+
+	t.Run("omitted patch preserves existing values", func(t *testing.T) {
+		global := GlobalConfig{
+			UpstreamProxyMode: GlobalUpstreamProxyModeCustom,
+			UpstreamProxyURL:  "http://127.0.0.1:7890",
+		}
+		if err := ApplyUpstreamProxySettings(&global, UpstreamProxySettingsPatch{}); err != nil {
+			t.Fatalf("ApplyUpstreamProxySettings: %v", err)
+		}
+		if global.UpstreamProxyMode != GlobalUpstreamProxyModeCustom || global.UpstreamProxyURL != "http://127.0.0.1:7890" {
+			t.Fatalf("global = %#v", global)
+		}
+	})
+
+	t.Run("switches to environment and clears url", func(t *testing.T) {
+		global := GlobalConfig{
+			UpstreamProxyMode: GlobalUpstreamProxyModeCustom,
+			UpstreamProxyURL:  "http://127.0.0.1:7890",
+		}
+		mode := "environment"
+		if err := ApplyUpstreamProxySettings(&global, UpstreamProxySettingsPatch{Mode: &mode}); err != nil {
+			t.Fatalf("ApplyUpstreamProxySettings: %v", err)
+		}
+		if global.UpstreamProxyMode != GlobalUpstreamProxyModeEnvironment || global.UpstreamProxyURL != "" {
+			t.Fatalf("global = %#v", global)
+		}
+	})
+
+	t.Run("rejects url without mode", func(t *testing.T) {
+		rawURL := "http://127.0.0.1:7890"
+		if err := ApplyUpstreamProxySettings(&GlobalConfig{}, UpstreamProxySettingsPatch{URL: &rawURL}); err == nil || !strings.Contains(err.Error(), "upstream_proxy_url requires upstream_proxy_mode") {
+			t.Fatalf("ApplyUpstreamProxySettings err = %v", err)
+		}
+	})
+
+	t.Run("rejects removed inherit mode", func(t *testing.T) {
+		mode := "inherit"
+		if err := ApplyUpstreamProxySettings(&GlobalConfig{}, UpstreamProxySettingsPatch{Mode: &mode}); err == nil || !strings.Contains(err.Error(), "upstream_proxy_mode must be one of environment, direct, custom") {
+			t.Fatalf("ApplyUpstreamProxySettings err = %v", err)
+		}
+	})
 }

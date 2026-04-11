@@ -529,7 +529,7 @@ func TestReloadProviderConfigsLocked_DoesNotPreserveSuppressionStateWhenProxyCha
 	}
 }
 
-func TestReloadProviderConfigsLocked_DoesNotPreserveSuppressionStateWhenGlobalProxyChangesForInheritedProvider(t *testing.T) {
+func TestReloadProviderConfigsLocked_DoesNotPreserveSuppressionStateWhenGlobalProxyChangesForDefaultProvider(t *testing.T) {
 	router, dir := newReloadTestRouter(t)
 	oldProxy := router.proxies[ClientOpenAI]
 	now := time.Now()
@@ -554,7 +554,7 @@ func TestReloadProviderConfigsLocked_DoesNotPreserveSuppressionStateWhenGlobalPr
 	global := config.DefaultGlobalConfig()
 	global.ListenAddr = "127.0.0.1"
 	global.Port = 3333
-	global.UpstreamProxyMode = config.ProviderProxyModeDirect
+	global.UpstreamProxyMode = config.GlobalUpstreamProxyModeDirect
 	writeProxyReloadFixture(t, dir, global, config.ClientConfig{
 		Mode: config.ClientModeAuto,
 		Providers: []config.Provider{

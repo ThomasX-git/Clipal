@@ -413,7 +413,7 @@ func TestHandleUpdateGlobalConfig_AcceptsSnakeCaseNotifications(t *testing.T) {
 			if cfg.Global.Routing.BusyBackpressure.MaxInlineWait != "12s" {
 				t.Fatalf("expected routing.busy_backpressure.max_inline_wait=12s, got %q", cfg.Global.Routing.BusyBackpressure.MaxInlineWait)
 			}
-			if cfg.Global.NormalizedUpstreamProxyMode() != config.ProviderProxyModeCustom {
+			if cfg.Global.NormalizedUpstreamProxyMode() != config.GlobalUpstreamProxyModeCustom {
 				t.Fatalf("expected upstream_proxy_mode=custom, got %q", cfg.Global.NormalizedUpstreamProxyMode())
 			}
 			if cfg.Global.NormalizedUpstreamProxyURL() != proxyURL {
@@ -493,7 +493,7 @@ func TestHandleUpdateGlobalConfig_AllowsClearingRoutingStrings(t *testing.T) {
 	if cfg.Global.Routing.BusyBackpressure.MaxInlineWait != "" {
 		t.Fatalf("expected routing.busy_backpressure.max_inline_wait to be cleared, got %q", cfg.Global.Routing.BusyBackpressure.MaxInlineWait)
 	}
-	if cfg.Global.NormalizedUpstreamProxyMode() != config.ProviderProxyModeDirect {
+	if cfg.Global.NormalizedUpstreamProxyMode() != config.GlobalUpstreamProxyModeDirect {
 		t.Fatalf("expected upstream_proxy_mode to be direct, got %q", cfg.Global.NormalizedUpstreamProxyMode())
 	}
 	if cfg.Global.NormalizedUpstreamProxyURL() != "" {
@@ -536,8 +536,8 @@ func TestHandleAddProvider_AcceptsAPIKeys(t *testing.T) {
 	if cfg.OpenAI.Providers[0].APIKey != "" {
 		t.Fatalf("expected multi-key provider to be persisted via api_keys")
 	}
-	if got := cfg.OpenAI.Providers[0].NormalizedProxyMode(); got != config.ProviderProxyModeInherit {
-		t.Fatalf("proxy_mode = %q, want %q", got, config.ProviderProxyModeInherit)
+	if got := cfg.OpenAI.Providers[0].NormalizedProxyMode(); got != config.ProviderProxyModeDefault {
+		t.Fatalf("proxy_mode = %q, want %q", got, config.ProviderProxyModeDefault)
 	}
 	if got := cfg.OpenAI.Providers[0].ModelOverride(); got != "gpt-5.4" {
 		t.Fatalf("model = %q", got)
@@ -657,7 +657,7 @@ func TestHandleAddProvider_AcceptsCustomProxy(t *testing.T) {
 }
 
 func TestHandleAddProvider_RejectsProxyURLWithoutCustomMode(t *testing.T) {
-	for _, mode := range []string{"direct", "inherit"} {
+	for _, mode := range []string{"direct", "default"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			api := NewAPI(dir, "test", nil)
@@ -764,7 +764,7 @@ providers:
 	})
 
 	t.Run("reject proxy url without custom mode", func(t *testing.T) {
-		for _, mode := range []string{"direct", "inherit"} {
+		for _, mode := range []string{"direct", "default"} {
 			t.Run(mode, func(t *testing.T) {
 				dir := t.TempDir()
 				if err := os.WriteFile(filepath.Join(dir, "openai.yaml"), []byte(`

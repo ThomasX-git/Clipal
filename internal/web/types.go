@@ -22,8 +22,8 @@ type GlobalConfigRequest struct {
 	ReactivateAfter       string                      `json:"reactivate_after"`
 	UpstreamIdleTimeout   string                      `json:"upstream_idle_timeout"`
 	ResponseHeaderTimeout string                      `json:"response_header_timeout"`
-	UpstreamProxyMode     string                      `json:"upstream_proxy_mode"`
-	UpstreamProxyURL      string                      `json:"upstream_proxy_url"`
+	UpstreamProxyMode     *string                     `json:"upstream_proxy_mode,omitempty"`
+	UpstreamProxyURL      *string                     `json:"upstream_proxy_url,omitempty"`
 	MaxRequestBodyBytes   int64                       `json:"max_request_body_bytes"`
 	LogDir                string                      `json:"log_dir"`
 	LogRetentionDays      int                         `json:"log_retention_days"`

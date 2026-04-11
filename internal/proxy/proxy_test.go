@@ -154,7 +154,7 @@ func TestNewClientProxy_UsesProviderSpecificProxyModes(t *testing.T) {
 	t.Setenv("HTTP_PROXY", "http://env-proxy:8080")
 
 	cp := newClientProxy(ClientOpenAI, config.ClientModeAuto, "", []config.Provider{
-		{Name: "inherit", BaseURL: "http://inherit.example", APIKey: "k1", Priority: 1},
+		{Name: "default", BaseURL: "http://default.example", APIKey: "k1", Priority: 1},
 		{Name: "direct", BaseURL: "http://direct.example", APIKey: "k2", ProxyMode: config.ProviderProxyModeDirect, Priority: 2},
 		{Name: "custom", BaseURL: "http://custom.example", APIKey: "k3", ProxyMode: config.ProviderProxyModeCustom, ProxyURL: "http://custom-proxy:9090", Priority: 3},
 	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{})
@@ -164,16 +164,16 @@ func TestNewClientProxy_UsesProviderSpecificProxyModes(t *testing.T) {
 		t.Fatalf("http.NewRequest: %v", err)
 	}
 
-	inheritTransport, ok := cp.upstreamHTTPClient(0).Transport.(*http.Transport)
+	defaultTransport, ok := cp.upstreamHTTPClient(0).Transport.(*http.Transport)
 	if !ok {
-		t.Fatalf("inherit transport type = %T", cp.upstreamHTTPClient(0).Transport)
+		t.Fatalf("default transport type = %T", cp.upstreamHTTPClient(0).Transport)
 	}
-	inheritProxy, err := inheritTransport.Proxy(req)
+	defaultProxy, err := defaultTransport.Proxy(req)
 	if err != nil {
-		t.Fatalf("inherit proxy: %v", err)
+		t.Fatalf("default proxy: %v", err)
 	}
-	if inheritProxy == nil || inheritProxy.String() != "http://env-proxy:8080" {
-		t.Fatalf("inherit proxy = %v, want http://env-proxy:8080", inheritProxy)
+	if defaultProxy == nil || defaultProxy.String() != "http://env-proxy:8080" {
+		t.Fatalf("default proxy = %v, want http://env-proxy:8080", defaultProxy)
 	}
 
 	directTransport, ok := cp.upstreamHTTPClient(1).Transport.(*http.Transport)
@@ -203,7 +203,7 @@ func TestNewClientProxy_UsesProviderSpecificProxyModes(t *testing.T) {
 	}
 }
 
-func TestNewClientProxyWithGlobalProxy_UsesGlobalDefaultForInheritedProviders(t *testing.T) {
+func TestNewClientProxyWithGlobalProxy_UsesGlobalDefaultForDefaultProviders(t *testing.T) {
 	t.Parallel()
 
 	req, err := http.NewRequest(http.MethodGet, "http://upstream.example/v1/test", nil)
@@ -212,8 +212,8 @@ func TestNewClientProxyWithGlobalProxy_UsesGlobalDefaultForInheritedProviders(t 
 	}
 
 	directCP := newClientProxyWithGlobalProxy(ClientOpenAI, config.ClientModeAuto, "", []config.Provider{
-		{Name: "inherit", BaseURL: "http://inherit.example", APIKey: "k1", Priority: 1},
-	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{}, config.ProviderProxyModeDirect, "")
+		{Name: "default", BaseURL: "http://default.example", APIKey: "k1", Priority: 1},
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{}, config.GlobalUpstreamProxyModeDirect, "")
 
 	directTransport, ok := directCP.upstreamHTTPClient(0).Transport.(*http.Transport)
 	if !ok {
@@ -230,8 +230,8 @@ func TestNewClientProxyWithGlobalProxy_UsesGlobalDefaultForInheritedProviders(t 
 	}
 
 	customCP := newClientProxyWithGlobalProxy(ClientOpenAI, config.ClientModeAuto, "", []config.Provider{
-		{Name: "inherit", BaseURL: "http://inherit.example", APIKey: "k1", Priority: 1},
-	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{}, config.ProviderProxyModeCustom, "http://global-proxy:8081")
+		{Name: "default", BaseURL: "http://default.example", APIKey: "k1", Priority: 1},
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{}, config.GlobalUpstreamProxyModeCustom, "http://global-proxy:8081")
 
 	customTransport, ok := customCP.upstreamHTTPClient(0).Transport.(*http.Transport)
 	if !ok {
@@ -243,6 +243,36 @@ func TestNewClientProxyWithGlobalProxy_UsesGlobalDefaultForInheritedProviders(t 
 	}
 	if customProxy == nil || customProxy.String() != "http://global-proxy:8081" {
 		t.Fatalf("custom proxy = %v, want http://global-proxy:8081", customProxy)
+	}
+}
+
+func TestNewClientProxyWithGlobalProxy_SharesHTTPClientsByEffectivePolicy(t *testing.T) {
+	t.Parallel()
+
+	cp := newClientProxyWithGlobalProxy(ClientOpenAI, config.ClientModeAuto, "", []config.Provider{
+		{Name: "default-a", BaseURL: "http://default-a.example", APIKey: "k1", Priority: 1},
+		{Name: "default-b", BaseURL: "http://default-b.example", APIKey: "k2", Priority: 2},
+		{Name: "direct-a", BaseURL: "http://direct-a.example", APIKey: "k3", ProxyMode: config.ProviderProxyModeDirect, Priority: 3},
+		{Name: "direct-b", BaseURL: "http://direct-b.example", APIKey: "k4", ProxyMode: config.ProviderProxyModeDirect, Priority: 4},
+		{Name: "custom-a", BaseURL: "http://custom-a.example", APIKey: "k5", ProxyMode: config.ProviderProxyModeCustom, ProxyURL: "http://custom-proxy:9090", Priority: 5},
+		{Name: "custom-b", BaseURL: "http://custom-b.example", APIKey: "k6", ProxyMode: config.ProviderProxyModeCustom, ProxyURL: "http://custom-proxy:9090", Priority: 6},
+		{Name: "custom-c", BaseURL: "http://custom-c.example", APIKey: "k7", ProxyMode: config.ProviderProxyModeCustom, ProxyURL: "http://other-proxy:9090", Priority: 7},
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{}, config.GlobalUpstreamProxyModeEnvironment, "")
+
+	if cp.upstreamHTTPClient(0) != cp.upstreamHTTPClient(1) {
+		t.Fatalf("default providers should share the environment client")
+	}
+	if cp.upstreamHTTPClient(2) != cp.upstreamHTTPClient(3) {
+		t.Fatalf("direct providers should share the direct client")
+	}
+	if cp.upstreamHTTPClient(4) != cp.upstreamHTTPClient(5) {
+		t.Fatalf("matching custom proxy URLs should share the same client")
+	}
+	if cp.upstreamHTTPClient(4) == cp.upstreamHTTPClient(6) {
+		t.Fatalf("different custom proxy URLs should not share the same client")
+	}
+	if cp.upstreamHTTPClient(0) == cp.upstreamHTTPClient(2) {
+		t.Fatalf("environment and direct policies should not share the same client")
 	}
 }
 

@@ -215,7 +215,7 @@
                                 <span class="provider-card__detail-value" x-text="provider.base_url"></span>
                             </div>
                             <div class="provider-card__detail"
-                                x-show="normalizeProviderProxyMode(provider.proxy_mode) !== 'inherit'">
+                                x-show="normalizeProviderProxyMode(provider.proxy_mode) !== 'default'">
                                 <span class="provider-card__detail-label" x-text="t('providers.proxy')"></span>
                                 <span class="provider-card__detail-value" x-text="providerProxySummary(provider)"></span>
                             </div>
@@ -323,13 +323,13 @@
                             <div class="form-group">
                                 <label class="form-label" x-text="t('settings.upstreamProxyMode')"></label>
                                 <select x-model="globalConfig.upstream_proxy_mode" class="form-select">
-                                    <option value="inherit" x-text="t('settings.proxyModeInherit')"></option>
+                                    <option value="environment" x-text="t('settings.proxyModeEnvironment')"></option>
                                     <option value="direct" x-text="t('settings.proxyModeDirect')"></option>
                                     <option value="custom" x-text="t('settings.proxyModeCustom')"></option>
                                 </select>
                                 <div class="form-hint" x-text="t('settings.upstreamProxyHint')"></div>
                             </div>
-                            <div class="form-group" x-show="normalizeProviderProxyMode(globalConfig.upstream_proxy_mode) === 'custom'">
+                            <div class="form-group" x-show="normalizeGlobalProxyMode(globalConfig.upstream_proxy_mode) === 'custom'">
                                 <label class="form-label" x-text="t('settings.upstreamProxyUrl')"></label>
                                 <input type="text" x-model="globalConfig.upstream_proxy_url" class="form-input"
                                     :placeholder="t('settings.upstreamProxyUrlHint')">
@@ -859,7 +859,7 @@
                     <label class="form-label" x-text="t('modal.provider.proxyMode')"></label>
                     <div class="form-control-wrap">
                         <select x-model="providerForm.proxy_mode" class="form-select">
-                            <option value="inherit" x-text="t('modal.provider.proxyModeInherit')"></option>
+                            <option value="default" x-text="t('modal.provider.proxyModeDefault')"></option>
                             <option value="direct" x-text="t('modal.provider.proxyModeDirect')"></option>
                             <option value="custom" x-text="t('modal.provider.proxyModeCustom')"></option>
                         </select>

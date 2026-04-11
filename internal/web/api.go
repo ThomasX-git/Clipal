@@ -111,13 +111,12 @@ func (a *API) HandleUpdateGlobalConfig(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(req.ResponseHeaderTimeout) != "" {
 		cfg.Global.ResponseHeaderTimeout = req.ResponseHeaderTimeout
 	}
-	if strings.TrimSpace(req.UpstreamProxyMode) != "" {
-		cfg.Global.UpstreamProxyMode = config.ProviderProxyMode(strings.ToLower(strings.TrimSpace(req.UpstreamProxyMode)))
-		if cfg.Global.UpstreamProxyMode == config.ProviderProxyModeCustom {
-			cfg.Global.UpstreamProxyURL = strings.TrimSpace(req.UpstreamProxyURL)
-		} else {
-			cfg.Global.UpstreamProxyURL = ""
-		}
+	if err := config.ApplyUpstreamProxySettings(&cfg.Global, config.UpstreamProxySettingsPatch{
+		Mode: req.UpstreamProxyMode,
+		URL:  req.UpstreamProxyURL,
+	}); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	cfg.Global.MaxRequestBody = req.MaxRequestBodyBytes
 	cfg.Global.LogDir = req.LogDir
@@ -274,7 +273,6 @@ func (a *API) HandleAddProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Overrides = normalizeProviderOverrideRequest(req.Overrides)
-	normalizeProviderProxyRequest(&req)
 	if err := validateProviderOverrideRequest(clientType, req.Overrides); err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -341,7 +339,10 @@ func (a *API) HandleAddProvider(w http.ResponseWriter, r *http.Request) {
 		Enabled:  req.Enabled,
 	}
 	applyProviderOverrides(&provider, req)
-	if err := applyProviderProxySettings(&provider, req, false); err != nil {
+	if err := config.ApplyProviderProxySettings(&provider, config.ProviderProxySettingsPatch{
+		Mode: req.ProxyMode,
+		URL:  req.ProxyURL,
+	}, false); err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -375,7 +376,6 @@ func (a *API) HandleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Overrides = normalizeProviderOverrideRequest(req.Overrides)
-	normalizeProviderProxyRequest(&req)
 	if err := validateProviderOverrideRequest(clientType, req.Overrides); err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -981,14 +981,6 @@ func normalizeProviderKeys(req ProviderRequest) ([]string, error) {
 	return keys, nil
 }
 
-func lowerTrimStringPtr(v *string) *string {
-	if v == nil {
-		return nil
-	}
-	trimmed := strings.ToLower(strings.TrimSpace(*v))
-	return &trimmed
-}
-
 func trimStringPtr(v *string) *string {
 	if v == nil {
 		return nil
@@ -1022,14 +1014,6 @@ func providerOverrideSupportForClient(clientType string) providerOverrideSupport
 		support.Claude.ThinkingBudgetTokens = true
 	}
 	return support
-}
-
-func normalizeProviderProxyRequest(req *ProviderRequest) {
-	if req == nil {
-		return
-	}
-	req.ProxyMode = lowerTrimStringPtr(req.ProxyMode)
-	req.ProxyURL = trimStringPtr(req.ProxyURL)
 }
 
 func normalizeProviderOverrideRequest(overrides *ProviderOverridesRequest) *ProviderOverridesRequest {
@@ -1079,68 +1063,6 @@ func validateProviderOverrideRequest(clientType string, overrides *ProviderOverr
 		}
 	}
 	return nil
-}
-
-func validateProviderProxyModeValue(mode string) error {
-	switch config.ProviderProxyMode(strings.TrimSpace(mode)) {
-	case config.ProviderProxyModeInherit, config.ProviderProxyModeDirect, config.ProviderProxyModeCustom:
-		return nil
-	default:
-		return fmt.Errorf("proxy_mode must be one of inherit, direct, custom")
-	}
-}
-
-func validateProviderProxyURLValue(raw string) error {
-	return config.ValidateProxyURL(raw)
-}
-
-func applyProviderProxySettings(provider *config.Provider, req ProviderRequest, isUpdate bool) error {
-	if provider == nil {
-		return nil
-	}
-	if !isUpdate && req.ProxyMode == nil && req.ProxyURL == nil {
-		provider.ProxyMode = config.ProviderProxyModeInherit
-		provider.ProxyURL = ""
-		return nil
-	}
-	if req.ProxyMode == nil {
-		if req.ProxyURL != nil {
-			return fmt.Errorf("proxy_url requires proxy_mode")
-		}
-		return nil
-	}
-
-	modeValue := strings.TrimSpace(*req.ProxyMode)
-	if err := validateProviderProxyModeValue(modeValue); err != nil {
-		return err
-	}
-
-	mode := config.ProviderProxyMode(modeValue)
-	proxyURL := provider.NormalizedProxyURL()
-	if req.ProxyURL != nil {
-		proxyURL = strings.TrimSpace(*req.ProxyURL)
-	}
-	switch mode {
-	case config.ProviderProxyModeInherit, config.ProviderProxyModeDirect:
-		if proxyURL != "" && req.ProxyURL != nil {
-			return fmt.Errorf("proxy_url requires proxy_mode custom")
-		}
-		provider.ProxyMode = mode
-		provider.ProxyURL = ""
-		return nil
-	case config.ProviderProxyModeCustom:
-		if proxyURL == "" {
-			return fmt.Errorf("proxy_url is required when proxy_mode=custom")
-		}
-		if err := validateProviderProxyURLValue(proxyURL); err != nil {
-			return err
-		}
-		provider.ProxyMode = mode
-		provider.ProxyURL = proxyURL
-		return nil
-	default:
-		return fmt.Errorf("proxy_mode must be one of inherit, direct, custom")
-	}
 }
 
 func applyProviderOverrides(provider *config.Provider, req ProviderRequest) {
@@ -1222,7 +1144,10 @@ func updateProviderInList(providers []config.Provider, name string, req Provider
 				providers[i].Enabled = req.Enabled
 			}
 			applyProviderOverrides(&providers[i], req)
-			if err := applyProviderProxySettings(&providers[i], req, true); err != nil {
+			if err := config.ApplyProviderProxySettings(&providers[i], config.ProviderProxySettingsPatch{
+				Mode: req.ProxyMode,
+				URL:  req.ProxyURL,
+			}, true); err != nil {
 				return false, err
 			}
 			return true, nil

@@ -118,7 +118,7 @@ function app() {
                         nameHint: 'Letters, numbers, dot (.), underscore (_), and hyphen (-).',
                         baseUrl: 'Base URL *',
                         proxyMode: 'Proxy Mode',
-                        proxyModeInherit: 'Inherit Environment',
+                        proxyModeDefault: 'Use Default',
                         proxyModeDirect: 'Direct',
                         proxyModeCustom: 'Custom Proxy',
                         proxyUrl: 'Proxy URL',
@@ -167,9 +167,9 @@ function app() {
                     responseHeaderTimeoutHint: 'Set to 0 to wait indefinitely for headers.',
                     upstreamProxyMode: 'Default Upstream Proxy',
                     upstreamProxyUrl: 'Default Proxy URL',
-                    upstreamProxyHint: 'Used by providers whose proxy mode is Inherit.',
+                    upstreamProxyHint: 'Used by providers whose proxy mode is Default.',
                     upstreamProxyUrlHelp: 'Supports http://, https://, socks5://, and socks5h:// proxy URLs.',
-                    proxyModeInherit: 'Inherit Environment',
+                    proxyModeEnvironment: 'Use Environment',
                     proxyModeDirect: 'Direct',
                     proxyModeCustom: 'Custom Proxy',
                     upstreamProxyUrlHint: 'http://127.0.0.1:7890',
@@ -427,7 +427,7 @@ function app() {
                         nameHint: '允许字母、数字、点号 (.)、下划线 (_) 和连字符 (-)。',
                         baseUrl: 'Base URL *',
                         proxyMode: '代理模式',
-                        proxyModeInherit: '继承环境变量',
+                        proxyModeDefault: '使用默认值',
                         proxyModeDirect: '直连',
                         proxyModeCustom: '自定义代理',
                         proxyUrl: '代理 URL',
@@ -475,9 +475,9 @@ function app() {
                     responseHeaderTimeoutHint: '设为 0 表示无限等待响应头。',
                     upstreamProxyMode: '默认上游代理',
                     upstreamProxyUrl: '默认代理 URL',
-                    upstreamProxyHint: '对代理模式为“继承”的 Provider 生效。',
+                    upstreamProxyHint: '对代理模式为“使用默认值”的 Provider 生效。',
                     upstreamProxyUrlHelp: '支持 http://、https://、socks5:// 和 socks5h:// 代理 URL。',
-                    proxyModeInherit: '继承环境变量',
+                    proxyModeEnvironment: '使用环境变量',
                     proxyModeDirect: '直连',
                     proxyModeCustom: '自定义代理',
                     upstreamProxyUrlHint: 'http://127.0.0.1:7890',
@@ -650,7 +650,7 @@ function app() {
             reactivate_after: '',
             upstream_idle_timeout: '',
             response_header_timeout: '',
-            upstream_proxy_mode: 'inherit',
+            upstream_proxy_mode: 'environment',
             upstream_proxy_url: '',
             max_request_body_bytes: 0,
             log_dir: '',
@@ -712,7 +712,7 @@ function app() {
         providerForm: {
             name: '',
             base_url: '',
-            proxy_mode: 'inherit',
+            proxy_mode: 'default',
             proxy_url: '',
             proxy_url_hint: '',
             model: '',
@@ -1515,9 +1515,14 @@ function app() {
             return this.tf('modal.provider.keepExistingKeys', { count });
         },
 
+        normalizeGlobalProxyMode(mode) {
+            const value = String(mode || '').trim().toLowerCase();
+            return value || 'environment';
+        },
+
         normalizeProviderProxyMode(mode) {
             const value = String(mode || '').trim().toLowerCase();
-            return ['inherit', 'direct', 'custom'].includes(value) ? value : 'inherit';
+            return value || 'default';
         },
 
         providerProxySummary(provider) {
@@ -1527,6 +1532,9 @@ function app() {
             }
             if (mode === 'custom') {
                 return String((provider && provider.proxy_url_hint) || '').trim() || this.t('providers.proxyCustom');
+            }
+            if (mode !== 'default') {
+                return mode;
             }
             return '';
         },
@@ -2071,7 +2079,7 @@ function app() {
             this.providerForm = {
                 name: '',
                 base_url: '',
-                proxy_mode: 'inherit',
+                proxy_mode: 'default',
                 proxy_url: '',
                 proxy_url_hint: '',
                 model: '',
@@ -2098,9 +2106,16 @@ function app() {
 
         async saveGlobalConfig() {
             try {
+                const payload = {
+                    ...this.globalConfig,
+                    upstream_proxy_mode: this.normalizeGlobalProxyMode(this.globalConfig.upstream_proxy_mode)
+                };
+                if (payload.upstream_proxy_mode !== 'custom') {
+                    payload.upstream_proxy_url = '';
+                }
                 await this.apiCall('/api/config/global/update', {
                     method: 'PUT',
-                    body: JSON.stringify(this.globalConfig)
+                    body: JSON.stringify(payload)
                 });
                 this.showAlert('success', this.t('settings.saveSuccess'));
                 await this.refreshStatus();
@@ -2229,7 +2244,7 @@ function app() {
             this.providerForm = {
                 name: '',
                 base_url: '',
-                proxy_mode: 'inherit',
+                proxy_mode: 'default',
                 proxy_url: '',
                 proxy_url_hint: '',
                 model: '',

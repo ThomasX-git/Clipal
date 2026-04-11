@@ -92,16 +92,16 @@ type GlobalConfig struct {
 	UpstreamIdleTimeout string `yaml:"upstream_idle_timeout"`
 	// ResponseHeaderTimeout controls how long we wait for the upstream to return
 	// response headers after the request is fully written. Set to "0" to disable.
-	ResponseHeaderTimeout string               `yaml:"response_header_timeout"`
-	UpstreamProxyMode     ProviderProxyMode    `yaml:"upstream_proxy_mode,omitempty"`
-	UpstreamProxyURL      string               `yaml:"upstream_proxy_url,omitempty"`
-	MaxRequestBody        int64                `yaml:"max_request_body_bytes"`
-	LogDir                string               `yaml:"log_dir"`
-	LogRetentionDays      int                  `yaml:"log_retention_days"`
-	LogStdout             *bool                `yaml:"log_stdout"`
-	Notifications         NotificationsConfig  `yaml:"notifications"`
-	CircuitBreaker        CircuitBreakerConfig `yaml:"circuit_breaker"`
-	Routing               RoutingConfig        `yaml:"routing"`
+	ResponseHeaderTimeout string                  `yaml:"response_header_timeout"`
+	UpstreamProxyMode     GlobalUpstreamProxyMode `yaml:"upstream_proxy_mode,omitempty"`
+	UpstreamProxyURL      string                  `yaml:"upstream_proxy_url,omitempty"`
+	MaxRequestBody        int64                   `yaml:"max_request_body_bytes"`
+	LogDir                string                  `yaml:"log_dir"`
+	LogRetentionDays      int                     `yaml:"log_retention_days"`
+	LogStdout             *bool                   `yaml:"log_stdout"`
+	Notifications         NotificationsConfig     `yaml:"notifications"`
+	CircuitBreaker        CircuitBreakerConfig    `yaml:"circuit_breaker"`
+	Routing               RoutingConfig           `yaml:"routing"`
 	// Deprecated: retained only so older config.yaml files still load under
 	// strict KnownFields decoding. Runtime no longer reads this field.
 	IgnoreCountTokensFailover bool `yaml:"ignore_count_tokens_failover"`
@@ -135,13 +135,31 @@ type ClaudeOverrides struct {
 	ThinkingBudgetTokens *int `yaml:"thinking_budget_tokens,omitempty"`
 }
 
+type GlobalUpstreamProxyMode string
+
+const (
+	GlobalUpstreamProxyModeEnvironment GlobalUpstreamProxyMode = "environment"
+	GlobalUpstreamProxyModeDirect      GlobalUpstreamProxyMode = "direct"
+	GlobalUpstreamProxyModeCustom      GlobalUpstreamProxyMode = "custom"
+)
+
 type ProviderProxyMode string
 
 const (
-	ProviderProxyModeInherit ProviderProxyMode = "inherit"
+	ProviderProxyModeDefault ProviderProxyMode = "default"
 	ProviderProxyModeDirect  ProviderProxyMode = "direct"
 	ProviderProxyModeCustom  ProviderProxyMode = "custom"
 )
+
+type UpstreamProxySettingsPatch struct {
+	Mode *string
+	URL  *string
+}
+
+type ProviderProxySettingsPatch struct {
+	Mode *string
+	URL  *string
+}
 
 type providerYAML struct {
 	Name                 string             `yaml:"name"`
@@ -217,7 +235,7 @@ func (p *Provider) UnmarshalYAML(value *yaml.Node) error {
 func (p Provider) MarshalYAML() (any, error) {
 	proxyMode := p.NormalizedProxyMode()
 	proxyURL := p.NormalizedProxyURL()
-	if proxyMode == ProviderProxyModeInherit {
+	if proxyMode == ProviderProxyModeDefault {
 		proxyMode = ""
 	}
 	if proxyMode != ProviderProxyModeCustom {
@@ -298,12 +316,36 @@ func NormalizeProviderProxySettings(provider *Provider) {
 	provider.ProxyURL = provider.NormalizedProxyURL()
 }
 
-func (g GlobalConfig) NormalizedUpstreamProxyMode() ProviderProxyMode {
+func NormalizeUpstreamProxySettings(global *GlobalConfig) {
+	if global == nil {
+		return
+	}
+	global.UpstreamProxyMode = global.NormalizedUpstreamProxyMode()
+	global.UpstreamProxyURL = global.NormalizedUpstreamProxyURL()
+}
+
+func NormalizeUpstreamProxySettingsPatch(patch *UpstreamProxySettingsPatch) {
+	if patch == nil {
+		return
+	}
+	patch.Mode = normalizeLowerTrimStringPtr(patch.Mode)
+	patch.URL = normalizeTrimStringPtr(patch.URL)
+}
+
+func NormalizeProviderProxySettingsPatch(patch *ProviderProxySettingsPatch) {
+	if patch == nil {
+		return
+	}
+	patch.Mode = normalizeLowerTrimStringPtr(patch.Mode)
+	patch.URL = normalizeTrimStringPtr(patch.URL)
+}
+
+func (g GlobalConfig) NormalizedUpstreamProxyMode() GlobalUpstreamProxyMode {
 	mode := strings.ToLower(strings.TrimSpace(string(g.UpstreamProxyMode)))
 	if mode == "" {
-		return ProviderProxyModeInherit
+		return GlobalUpstreamProxyModeEnvironment
 	}
-	return ProviderProxyMode(mode)
+	return GlobalUpstreamProxyMode(mode)
 }
 
 func (g GlobalConfig) NormalizedUpstreamProxyURL() string {
@@ -313,7 +355,7 @@ func (g GlobalConfig) NormalizedUpstreamProxyURL() string {
 func (p Provider) NormalizedProxyMode() ProviderProxyMode {
 	mode := strings.ToLower(strings.TrimSpace(string(p.ProxyMode)))
 	if mode == "" {
-		return ProviderProxyModeInherit
+		return ProviderProxyModeDefault
 	}
 	return ProviderProxyMode(mode)
 }
@@ -322,9 +364,115 @@ func (p Provider) NormalizedProxyURL() string {
 	return strings.TrimSpace(p.ProxyURL)
 }
 
-func validateProxySettings(scope string, mode ProviderProxyMode, rawURL string) error {
+func ApplyUpstreamProxySettings(global *GlobalConfig, patch UpstreamProxySettingsPatch) error {
+	if global == nil {
+		return nil
+	}
+	NormalizeUpstreamProxySettingsPatch(&patch)
+	if patch.Mode == nil {
+		if patch.URL != nil {
+			return fmt.Errorf("upstream_proxy_url requires upstream_proxy_mode")
+		}
+		return nil
+	}
+
+	mode := GlobalUpstreamProxyMode(*patch.Mode)
+	proxyURL := global.NormalizedUpstreamProxyURL()
+	if patch.URL != nil {
+		proxyURL = *patch.URL
+	}
+
 	switch mode {
-	case ProviderProxyModeInherit, ProviderProxyModeDirect:
+	case GlobalUpstreamProxyModeEnvironment, GlobalUpstreamProxyModeDirect:
+		if patch.URL != nil && proxyURL != "" {
+			return fmt.Errorf("upstream_proxy_url requires upstream_proxy_mode custom")
+		}
+		global.UpstreamProxyMode = mode
+		global.UpstreamProxyURL = ""
+		return nil
+	case GlobalUpstreamProxyModeCustom:
+		if proxyURL == "" {
+			return fmt.Errorf("upstream_proxy_url is required when upstream_proxy_mode=custom")
+		}
+		if err := ValidateProxyURL(proxyURL); err != nil {
+			return err
+		}
+		global.UpstreamProxyMode = mode
+		global.UpstreamProxyURL = proxyURL
+		return nil
+	default:
+		return fmt.Errorf("upstream_proxy_mode must be one of environment, direct, custom")
+	}
+}
+
+func ApplyProviderProxySettings(provider *Provider, patch ProviderProxySettingsPatch, isUpdate bool) error {
+	if provider == nil {
+		return nil
+	}
+	NormalizeProviderProxySettingsPatch(&patch)
+	if !isUpdate && patch.Mode == nil && patch.URL == nil {
+		provider.ProxyMode = ProviderProxyModeDefault
+		provider.ProxyURL = ""
+		return nil
+	}
+	if patch.Mode == nil {
+		if patch.URL != nil {
+			return fmt.Errorf("proxy_url requires proxy_mode")
+		}
+		return nil
+	}
+
+	mode := ProviderProxyMode(*patch.Mode)
+	proxyURL := provider.NormalizedProxyURL()
+	if patch.URL != nil {
+		proxyURL = *patch.URL
+	}
+
+	switch mode {
+	case ProviderProxyModeDefault, ProviderProxyModeDirect:
+		if patch.URL != nil && proxyURL != "" {
+			return fmt.Errorf("proxy_url requires proxy_mode custom")
+		}
+		provider.ProxyMode = mode
+		provider.ProxyURL = ""
+		return nil
+	case ProviderProxyModeCustom:
+		if proxyURL == "" {
+			return fmt.Errorf("proxy_url is required when proxy_mode=custom")
+		}
+		if err := ValidateProxyURL(proxyURL); err != nil {
+			return err
+		}
+		provider.ProxyMode = mode
+		provider.ProxyURL = proxyURL
+		return nil
+	default:
+		return fmt.Errorf("proxy_mode must be one of default, direct, custom")
+	}
+}
+
+func validateGlobalProxySettings(scope string, mode GlobalUpstreamProxyMode, rawURL string) error {
+	switch mode {
+	case GlobalUpstreamProxyModeEnvironment, GlobalUpstreamProxyModeDirect:
+		if rawURL != "" {
+			return fmt.Errorf("%s: upstream_proxy_url requires upstream_proxy_mode custom", scope)
+		}
+	case GlobalUpstreamProxyModeCustom:
+		if rawURL == "" {
+			return fmt.Errorf("%s: upstream_proxy_url is required when upstream_proxy_mode=custom", scope)
+		}
+		if err := ValidateProxyURL(rawURL); err != nil {
+			return fmt.Errorf("%s: %w", scope, err)
+		}
+	default:
+		return fmt.Errorf("%s: invalid upstream_proxy_mode %q", scope, mode)
+	}
+	return nil
+}
+
+func validateProviderProxySettings(scope string, mode ProviderProxyMode, rawURL string) error {
+	switch mode {
+	case ProviderProxyModeDefault, ProviderProxyModeDirect:
 		if rawURL != "" {
 			return fmt.Errorf("%s: proxy_url requires proxy_mode custom", scope)
 		}
@@ -339,6 +487,22 @@ func validateProxySettings(scope string, mode ProviderProxyMode, rawURL string) 
 		return fmt.Errorf("%s: invalid proxy_mode %q", scope, mode)
 	}
 	return nil
+}
+
+func normalizeLowerTrimStringPtr(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	trimmed := strings.ToLower(strings.TrimSpace(*v))
+	return &trimmed
+}
+
+func normalizeTrimStringPtr(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*v)
+	return &trimmed
 }
 
 // IsEnabled returns whether the provider is enabled (default true)
@@ -441,7 +605,7 @@ func DefaultGlobalConfig() GlobalConfig {
 		ReactivateAfter:       "1h",
 		UpstreamIdleTimeout:   "3m",
 		ResponseHeaderTimeout: "2m",
-		UpstreamProxyMode:     ProviderProxyModeInherit,
+		UpstreamProxyMode:     GlobalUpstreamProxyModeEnvironment,
 		UpstreamProxyURL:      "",
 		// Default body limit: 32 MiB. clipal buffers request bodies to support retries,
 		// so a hard cap prevents unbounded memory usage.
@@ -502,6 +666,7 @@ func Load(configDir string) (*Config, error) {
 	if err := loadYAML(globalPath, &cfg.Global); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to load global config: %w", err)
 	}
+	NormalizeUpstreamProxySettings(&cfg.Global)
 
 	if err := migrateLegacyClientConfigFiles(configDir); err != nil {
 		return nil, err
@@ -781,7 +946,7 @@ func (c *Config) Validate() error {
 	if c.Global.LogRetentionDays < 0 {
 		return fmt.Errorf("invalid log_retention_days: %d", c.Global.LogRetentionDays)
 	}
-	if err := validateProxySettings("global upstream proxy", c.Global.NormalizedUpstreamProxyMode(), c.Global.NormalizedUpstreamProxyURL()); err != nil {
+	if err := validateGlobalProxySettings("global upstream proxy", c.Global.NormalizedUpstreamProxyMode(), c.Global.NormalizedUpstreamProxyURL()); err != nil {
 		return err
 	}
 
@@ -893,7 +1058,7 @@ func validateProviders(clientName string, providers []Provider) error {
 		if p.Priority < 1 {
 			return fmt.Errorf("%s provider %s: priority must be >= 1", clientName, p.Name)
 		}
-		if err := validateProxySettings(fmt.Sprintf("%s provider %s", clientName, p.Name), p.NormalizedProxyMode(), p.NormalizedProxyURL()); err != nil {
+		if err := validateProviderProxySettings(fmt.Sprintf("%s provider %s", clientName, p.Name), p.NormalizedProxyMode(), p.NormalizedProxyURL()); err != nil {
 			return err
 		}
 		if !providerOverridesSupportedForClient(clientName, p.Overrides) {

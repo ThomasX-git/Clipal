@@ -141,7 +141,7 @@ test('saveProvider includes OpenAI override fields in payload', async () => {
     assert.deepEqual(calls[0].options, {
         name: 'openai-primary',
         base_url: 'https://example.com',
-        proxy_mode: 'inherit',
+        proxy_mode: 'default',
         priority: 1,
         enabled: true,
         overrides: {
@@ -193,7 +193,7 @@ test('saveProvider includes Claude thinking budget override in payload', async (
     assert.deepEqual(calls[0].options, {
         name: 'claude-primary',
         base_url: 'https://example.com',
-        proxy_mode: 'inherit',
+        proxy_mode: 'default',
         priority: 2,
         enabled: false,
         overrides: {
@@ -289,7 +289,7 @@ test('openAddProviderModal sets next priority for provider form', () => {
 
     assert.equal(state.showAddProviderModal, true);
     assert.equal(state.providerForm.priority, 4);
-    assert.equal(state.providerForm.proxy_mode, 'inherit');
+    assert.equal(state.providerForm.proxy_mode, 'default');
 });
 
 test('editProvider hydrates override fields directly into the form', () => {
@@ -367,7 +367,7 @@ test('saveProvider omits unsupported override fields for gemini', async () => {
     state.providerForm = {
         name: 'gemini-primary',
         base_url: 'https://example.com',
-        proxy_mode: 'inherit',
+        proxy_mode: 'default',
         proxy_url: '',
         proxy_url_hint: '',
         model: 'gemini-2.5-pro',
@@ -393,9 +393,32 @@ test('saveProvider omits unsupported override fields for gemini', async () => {
     assert.deepEqual(calls[0].options, {
         name: 'gemini-primary',
         base_url: 'https://example.com',
-        proxy_mode: 'inherit',
+        proxy_mode: 'default',
         priority: 1,
         enabled: true,
         api_key: 'key-1'
     });
+});
+
+test('saveGlobalConfig normalizes and clears non-custom upstream proxy settings', async () => {
+    const state = loadApp();
+    const calls = [];
+    state.globalConfig = {
+        ...state.globalConfig,
+        upstream_proxy_mode: 'DIRECT',
+        upstream_proxy_url: 'http://127.0.0.1:7890'
+    };
+    state.apiCall = async (url, options) => {
+        calls.push({ url, options: JSON.parse(options.body) });
+        return {};
+    };
+    state.showAlert = () => {};
+    state.refreshStatus = async () => {};
+
+    await state.saveGlobalConfig();
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, '/api/config/global/update');
+    assert.equal(calls[0].options.upstream_proxy_mode, 'direct');
+    assert.equal(calls[0].options.upstream_proxy_url, '');
 });
