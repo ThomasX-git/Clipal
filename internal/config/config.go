@@ -352,6 +352,12 @@ func (g GlobalConfig) NormalizedUpstreamProxyURL() string {
 	return strings.TrimSpace(g.UpstreamProxyURL)
 }
 
+// CanonicalUpstreamProxyURL returns a canonicalized upstream proxy URL suitable
+// for policy key construction and identity comparison.
+func (g GlobalConfig) CanonicalUpstreamProxyURL() string {
+	return CanonicalProxyURL(g.UpstreamProxyURL)
+}
+
 func (p Provider) NormalizedProxyMode() ProviderProxyMode {
 	mode := strings.ToLower(strings.TrimSpace(string(p.ProxyMode)))
 	if mode == "" {
@@ -362,6 +368,12 @@ func (p Provider) NormalizedProxyMode() ProviderProxyMode {
 
 func (p Provider) NormalizedProxyURL() string {
 	return strings.TrimSpace(p.ProxyURL)
+}
+
+// CanonicalProxyURL returns a canonicalized provider proxy URL suitable
+// for policy key construction and identity comparison.
+func (p Provider) CanonicalProxyURL() string {
+	return CanonicalProxyURL(p.ProxyURL)
 }
 
 func ApplyUpstreamProxySettings(global *GlobalConfig, patch UpstreamProxySettingsPatch) error {

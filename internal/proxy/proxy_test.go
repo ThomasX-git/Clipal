@@ -297,8 +297,8 @@ func TestNewClientProxy_UsesCustomSocksProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("custom proxy: %v", err)
 	}
-	if customProxy == nil || customProxy.String() != "socks5://custom-proxy:1080" {
-		t.Fatalf("custom proxy = %v, want socks5://custom-proxy:1080", customProxy)
+	if customProxy == nil || customProxy.String() != "socks5://custom-proxy" {
+		t.Fatalf("custom proxy = %v, want socks5://custom-proxy", customProxy)
 	}
 }
 

@@ -220,19 +220,19 @@ func NewRouter(cfg *config.Config) *Router {
 	// Initialize client proxies
 	claudeProviders := config.GetEnabledProviders(cfg.Claude)
 	if len(claudeProviders) > 0 {
-		r.proxies[ClientClaude] = newClientProxyWithGlobalProxy(ClientClaude, cfg.Claude.Mode, cfg.Claude.PinnedProvider, claudeProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.NormalizedUpstreamProxyURL(), telemetryStore)
+		r.proxies[ClientClaude] = newClientProxyWithGlobalProxy(ClientClaude, cfg.Claude.Mode, cfg.Claude.PinnedProvider, claudeProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.CanonicalUpstreamProxyURL(), telemetryStore)
 		r.proxies[ClientClaude].applyRoutingRuntimeSettings(routingCfg)
 	}
 
 	codexProviders := config.GetEnabledProviders(cfg.OpenAI)
 	if len(codexProviders) > 0 {
-		r.proxies[ClientOpenAI] = newClientProxyWithGlobalProxy(ClientOpenAI, cfg.OpenAI.Mode, cfg.OpenAI.PinnedProvider, codexProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.NormalizedUpstreamProxyURL(), telemetryStore)
+		r.proxies[ClientOpenAI] = newClientProxyWithGlobalProxy(ClientOpenAI, cfg.OpenAI.Mode, cfg.OpenAI.PinnedProvider, codexProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.CanonicalUpstreamProxyURL(), telemetryStore)
 		r.proxies[ClientOpenAI].applyRoutingRuntimeSettings(routingCfg)
 	}
 
 	geminiProviders := config.GetEnabledProviders(cfg.Gemini)
 	if len(geminiProviders) > 0 {
-		r.proxies[ClientGemini] = newClientProxyWithGlobalProxy(ClientGemini, cfg.Gemini.Mode, cfg.Gemini.PinnedProvider, geminiProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.NormalizedUpstreamProxyURL(), telemetryStore)
+		r.proxies[ClientGemini] = newClientProxyWithGlobalProxy(ClientGemini, cfg.Gemini.Mode, cfg.Gemini.PinnedProvider, geminiProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.CanonicalUpstreamProxyURL(), telemetryStore)
 		r.proxies[ClientGemini].applyRoutingRuntimeSettings(routingCfg)
 	}
 
@@ -367,13 +367,13 @@ func effectiveProviderProxyPolicy(provider config.Provider, globalMode config.Gl
 	case config.ProviderProxyModeDirect:
 		return upstreamProxyPolicyKey{mode: upstreamProxyPolicyDirect}
 	case config.ProviderProxyModeCustom:
-		return upstreamProxyPolicyKey{mode: upstreamProxyPolicyCustom, url: provider.NormalizedProxyURL()}
+		return upstreamProxyPolicyKey{mode: upstreamProxyPolicyCustom, url: provider.CanonicalProxyURL()}
 	default:
 		switch globalMode {
 		case config.GlobalUpstreamProxyModeDirect:
 			return upstreamProxyPolicyKey{mode: upstreamProxyPolicyDirect}
 		case config.GlobalUpstreamProxyModeCustom:
-			return upstreamProxyPolicyKey{mode: upstreamProxyPolicyCustom, url: strings.TrimSpace(globalURL)}
+			return upstreamProxyPolicyKey{mode: upstreamProxyPolicyCustom, url: globalURL}
 		default:
 			return upstreamProxyPolicyKey{mode: upstreamProxyPolicyEnvironment}
 		}
@@ -708,16 +708,18 @@ func (r *Router) reloadProviderConfigsLocked() error {
 		logger.Warn("invalid runtime durations; defaulting to reactivate_after=1h upstream_idle_timeout=3m response_header_timeout=2m: %v", err)
 	}
 	cbCfg := normalizeCircuitBreakerConfig(newCfg.Global.CircuitBreaker)
+	globalProxyMode := newCfg.Global.NormalizedUpstreamProxyMode()
+	globalProxyURL := newCfg.Global.CanonicalUpstreamProxyURL()
 
 	newProxies := make(map[ClientType]*ClientProxy)
 	if ps := config.GetEnabledProviders(newCfg.Claude); len(ps) > 0 {
-		newProxies[ClientClaude] = newReloadedClientProxy(ClientClaude, newCfg.Claude.Mode, newCfg.Claude.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), newCfg.Global.NormalizedUpstreamProxyMode(), newCfg.Global.NormalizedUpstreamProxyURL(), oldProxies[ClientClaude], r.telemetry)
+		newProxies[ClientClaude] = newReloadedClientProxy(ClientClaude, newCfg.Claude.Mode, newCfg.Claude.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), globalProxyMode, globalProxyURL, oldProxies[ClientClaude], r.telemetry)
 	}
 	if ps := config.GetEnabledProviders(newCfg.OpenAI); len(ps) > 0 {
-		newProxies[ClientOpenAI] = newReloadedClientProxy(ClientOpenAI, newCfg.OpenAI.Mode, newCfg.OpenAI.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), newCfg.Global.NormalizedUpstreamProxyMode(), newCfg.Global.NormalizedUpstreamProxyURL(), oldProxies[ClientOpenAI], r.telemetry)
+		newProxies[ClientOpenAI] = newReloadedClientProxy(ClientOpenAI, newCfg.OpenAI.Mode, newCfg.OpenAI.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), globalProxyMode, globalProxyURL, oldProxies[ClientOpenAI], r.telemetry)
 	}
 	if ps := config.GetEnabledProviders(newCfg.Gemini); len(ps) > 0 {
-		newProxies[ClientGemini] = newReloadedClientProxy(ClientGemini, newCfg.Gemini.Mode, newCfg.Gemini.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), newCfg.Global.NormalizedUpstreamProxyMode(), newCfg.Global.NormalizedUpstreamProxyURL(), oldProxies[ClientGemini], r.telemetry)
+		newProxies[ClientGemini] = newReloadedClientProxy(ClientGemini, newCfg.Gemini.Mode, newCfg.Gemini.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), globalProxyMode, globalProxyURL, oldProxies[ClientGemini], r.telemetry)
 	}
 	r.reconcileTelemetryUsage(oldCfg, newCfg)
 
