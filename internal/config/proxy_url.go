@@ -13,6 +13,9 @@ const (
 )
 
 // ParseProxyURL validates a configured proxy URL and normalizes its scheme.
+// It rejects URLs that contain a path, query string, or fragment, because
+// those components do not affect which proxy server is contacted and would
+// produce false-different policy keys under canonicalization.
 func ParseProxyURL(raw string) (*url.URL, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" {
@@ -22,10 +25,28 @@ func ParseProxyURL(raw string) (*url.URL, error) {
 	parsed.Scheme = strings.ToLower(parsed.Scheme)
 	switch parsed.Scheme {
 	case "http", "https", "socks5", "socks5h":
-		return parsed, nil
 	default:
 		return nil, fmt.Errorf("proxy_url scheme must be %s", supportedProxyURLSchemeList)
 	}
+
+	if parsed.Path != "" && parsed.Path != "/" {
+		return nil, fmt.Errorf("proxy_url must not contain a path (got %q); use scheme://host[:port] form", parsed.Path)
+	}
+	if parsed.RawQuery != "" || parsed.ForceQuery {
+		rawQuery := parsed.RawQuery
+		if parsed.ForceQuery && rawQuery == "" {
+			rawQuery = "?"
+		}
+		return nil, fmt.Errorf("proxy_url must not contain a query string (got %q)", rawQuery)
+	}
+	if parsed.Fragment != "" {
+		return nil, fmt.Errorf("proxy_url must not contain a fragment (got %q)", parsed.Fragment)
+	}
+
+	// Strip a bare trailing slash so canonical output is consistent.
+	parsed.Path = ""
+
+	return parsed, nil
 }
 
 // CanonicalProxyURL returns a canonical form of the given proxy URL.
@@ -46,6 +67,11 @@ func CanonicalProxyURL(raw string) string {
 		return trimmed
 	}
 	parsed.Host = canonicalHost(parsed.Host, parsed.Scheme)
+	// Defense-in-depth: strip components that don't affect proxy identity.
+	parsed.Path = ""
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
 	return parsed.String()
 }
 

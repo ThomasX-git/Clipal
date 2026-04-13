@@ -40,8 +40,12 @@ func TestCanonicalProxyURL(t *testing.T) {
 		{name: "ipv6 zone strips default port without lowercasing zone", input: "http://[FE80::ABCD%25En0]:80", want: "http://[fe80::abcd%25En0]"},
 		{name: "preserves userinfo case", input: "http://User:Pass@PROXY.EXAMPLE:8080", want: "http://User:Pass@proxy.example:8080"},
 		{name: "userinfo with default port stripped", input: "http://user:pass@proxy.example:80", want: "http://user:pass@proxy.example"},
-		{name: "preserves path", input: "http://proxy.example:8080/path", want: "http://proxy.example:8080/path"},
-		{name: "preserves trailing slash", input: "http://proxy.example:8080/", want: "http://proxy.example:8080/"},
+		{name: "preserves trailing slash", input: "http://proxy.example:8080/", want: "http://proxy.example:8080"},
+		{name: "path rejected", input: "http://proxy.example:8080/path", want: "http://proxy.example:8080/path"},
+		{name: "query rejected", input: "http://proxy.example:8080?x=1", want: "http://proxy.example:8080?x=1"},
+		{name: "bare query rejected", input: "http://proxy.example:8080?", want: "http://proxy.example:8080?"},
+		{name: "bare query after slash rejected", input: "http://proxy.example:8080/?", want: "http://proxy.example:8080/?"},
+		{name: "fragment rejected", input: "http://proxy.example:8080#frag", want: "http://proxy.example:8080#frag"},
 	}
 
 	for _, tt := range tests {
@@ -64,6 +68,7 @@ func TestCanonicalProxyURL_Equivalence(t *testing.T) {
 		{"  http://proxy.example:8080  ", "http://proxy.example:8080"},
 		{"HTTP://PROXY.EXAMPLE:80", "http://proxy.example"},
 		{"http://user:pass@PROXY.EXAMPLE:80", "http://user:pass@proxy.example"},
+		{"http://proxy.example/", "http://proxy.example"},
 	}
 
 	for _, p := range pairs {
@@ -72,6 +77,44 @@ func TestCanonicalProxyURL_Equivalence(t *testing.T) {
 		if ca != cb {
 			t.Errorf("CanonicalProxyURL(%q) = %q, CanonicalProxyURL(%q) = %q; want equal", p.a, ca, p.b, cb)
 		}
+	}
+}
+
+func TestParseProxyURL_RejectsPathQueryFragment(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "path", input: "http://proxy.example:8080/path"},
+		{name: "query", input: "http://proxy.example:8080?x=1"},
+		{name: "bare query", input: "http://proxy.example:8080?"},
+		{name: "bare query after slash", input: "http://proxy.example:8080/?"},
+		{name: "fragment", input: "http://proxy.example:8080#frag"},
+		{name: "path and query", input: "http://proxy.example:8080/path?x=1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ParseProxyURL(tt.input)
+			if err == nil {
+				t.Errorf("ParseProxyURL(%q) succeeded; want rejection", tt.input)
+			}
+		})
+	}
+}
+
+func TestParseProxyURL_AcceptsBareTrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	parsed, err := ParseProxyURL("http://proxy.example:8080/")
+	if err != nil {
+		t.Fatalf("ParseProxyURL with trailing slash: %v", err)
+	}
+	if parsed.Path != "" {
+		t.Errorf("Path = %q, want empty (trailing slash should be stripped)", parsed.Path)
 	}
 }
 
