@@ -94,6 +94,19 @@ type routingRuntimeSettings struct {
 	maxInlineWait          time.Duration
 }
 
+type upstreamProxyPolicyMode string
+
+const (
+	upstreamProxyPolicyEnvironment upstreamProxyPolicyMode = "environment"
+	upstreamProxyPolicyDirect      upstreamProxyPolicyMode = "direct"
+	upstreamProxyPolicyCustom      upstreamProxyPolicyMode = "custom"
+)
+
+type upstreamProxyPolicyKey struct {
+	mode upstreamProxyPolicyMode
+	url  string
+}
+
 // Router manages multiple client proxies
 type Router struct {
 	cfg        *config.Config
@@ -129,27 +142,29 @@ func (r *Router) TelemetryStore() *telemetry.Store {
 
 // ClientProxy handles requests for a specific client type
 type ClientProxy struct {
-	clientType           ClientType
-	mode                 config.ClientMode
-	pinnedProvider       string
-	pinnedIndex          int
-	providers            []config.Provider
-	providerKeys         [][]string
-	currentIndex         int
-	countTokensIndex     int
-	responsesIndex       int
-	geminiStreamIndex    int
-	currentKeyIndex      []int
-	countTokensKeyIndex  []int
-	responsesKeyIndex    []int
-	geminiStreamKeyIndex []int
-	mu                   sync.RWMutex
-	httpClient           *http.Client
-	deactivated          []providerDeactivation
-	keyDeactivated       [][]providerDeactivation
-	providerBusy         []providerBusyState
-	reactivateAfter      time.Duration
-	upstreamIdle         time.Duration
+	clientType            ClientType
+	mode                  config.ClientMode
+	pinnedProvider        string
+	pinnedIndex           int
+	providers             []config.Provider
+	providerKeys          [][]string
+	currentIndex          int
+	countTokensIndex      int
+	responsesIndex        int
+	geminiStreamIndex     int
+	currentKeyIndex       []int
+	countTokensKeyIndex   []int
+	responsesKeyIndex     []int
+	geminiStreamKeyIndex  []int
+	mu                    sync.RWMutex
+	httpClient            *http.Client
+	providerHTTPClients   []*http.Client
+	providerProxyPolicies []upstreamProxyPolicyKey
+	deactivated           []providerDeactivation
+	keyDeactivated        [][]providerDeactivation
+	providerBusy          []providerBusyState
+	reactivateAfter       time.Duration
+	upstreamIdle          time.Duration
 
 	stickyBindings         map[string]stickyBinding
 	responseLookup         map[string]stickyLookupEntry
@@ -163,8 +178,20 @@ type ClientProxy struct {
 
 // Close releases resources held by the ClientProxy.
 func (cp *ClientProxy) Close() {
-	if cp.httpClient != nil {
-		cp.httpClient.CloseIdleConnections()
+	seen := make(map[*http.Client]struct{}, len(cp.providerHTTPClients)+1)
+	closeClient := func(client *http.Client) {
+		if client == nil {
+			return
+		}
+		if _, ok := seen[client]; ok {
+			return
+		}
+		seen[client] = struct{}{}
+		client.CloseIdleConnections()
+	}
+	closeClient(cp.httpClient)
+	for _, client := range cp.providerHTTPClients {
+		closeClient(client)
 	}
 }
 
@@ -193,19 +220,19 @@ func NewRouter(cfg *config.Config) *Router {
 	// Initialize client proxies
 	claudeProviders := config.GetEnabledProviders(cfg.Claude)
 	if len(claudeProviders) > 0 {
-		r.proxies[ClientClaude] = newClientProxy(ClientClaude, cfg.Claude.Mode, cfg.Claude.PinnedProvider, claudeProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, telemetryStore)
+		r.proxies[ClientClaude] = newClientProxyWithGlobalProxy(ClientClaude, cfg.Claude.Mode, cfg.Claude.PinnedProvider, claudeProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.CanonicalUpstreamProxyURL(), telemetryStore)
 		r.proxies[ClientClaude].applyRoutingRuntimeSettings(routingCfg)
 	}
 
 	codexProviders := config.GetEnabledProviders(cfg.OpenAI)
 	if len(codexProviders) > 0 {
-		r.proxies[ClientOpenAI] = newClientProxy(ClientOpenAI, cfg.OpenAI.Mode, cfg.OpenAI.PinnedProvider, codexProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, telemetryStore)
+		r.proxies[ClientOpenAI] = newClientProxyWithGlobalProxy(ClientOpenAI, cfg.OpenAI.Mode, cfg.OpenAI.PinnedProvider, codexProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.CanonicalUpstreamProxyURL(), telemetryStore)
 		r.proxies[ClientOpenAI].applyRoutingRuntimeSettings(routingCfg)
 	}
 
 	geminiProviders := config.GetEnabledProviders(cfg.Gemini)
 	if len(geminiProviders) > 0 {
-		r.proxies[ClientGemini] = newClientProxy(ClientGemini, cfg.Gemini.Mode, cfg.Gemini.PinnedProvider, geminiProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, telemetryStore)
+		r.proxies[ClientGemini] = newClientProxyWithGlobalProxy(ClientGemini, cfg.Gemini.Mode, cfg.Gemini.PinnedProvider, geminiProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.CanonicalUpstreamProxyURL(), telemetryStore)
 		r.proxies[ClientGemini].applyRoutingRuntimeSettings(routingCfg)
 	}
 
@@ -213,6 +240,10 @@ func NewRouter(cfg *config.Config) *Router {
 }
 
 func newClientProxy(clientType ClientType, mode config.ClientMode, pinnedProvider string, providers []config.Provider, reactivateAfter time.Duration, upstreamIdle time.Duration, responseHeaderTimeout time.Duration, cbCfg circuitBreakerConfig, telemetryStore ...*telemetry.Store) *ClientProxy {
+	return newClientProxyWithGlobalProxy(clientType, mode, pinnedProvider, providers, reactivateAfter, upstreamIdle, responseHeaderTimeout, cbCfg, config.GlobalUpstreamProxyModeEnvironment, "", telemetryStore...)
+}
+
+func newClientProxyWithGlobalProxy(clientType ClientType, mode config.ClientMode, pinnedProvider string, providers []config.Provider, reactivateAfter time.Duration, upstreamIdle time.Duration, responseHeaderTimeout time.Duration, cbCfg circuitBreakerConfig, globalProxyMode config.GlobalUpstreamProxyMode, globalProxyURL string, telemetryStore ...*telemetry.Store) *ClientProxy {
 	var store *telemetry.Store
 	if len(telemetryStore) > 0 {
 		store = telemetryStore[0]
@@ -221,6 +252,7 @@ func newClientProxy(clientType ClientType, mode config.ClientMode, pinnedProvide
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}
+	sharedClient := newUpstreamHTTPClient(dialer, responseHeaderTimeout, http.ProxyFromEnvironment)
 	pinnedIndex := -1
 	pinnedProvider = strings.TrimSpace(pinnedProvider)
 	if mode == config.ClientModeManual && pinnedProvider != "" {
@@ -238,10 +270,23 @@ func newClientProxy(clientType ClientType, mode config.ClientMode, pinnedProvide
 	countTokensKeyIndex := make([]int, len(providers))
 	responsesKeyIndex := make([]int, len(providers))
 	geminiStreamKeyIndex := make([]int, len(providers))
+	providerHTTPClients := make([]*http.Client, len(providers))
+	providerProxyPolicies := make([]upstreamProxyPolicyKey, len(providers))
+	policyClients := map[upstreamProxyPolicyKey]*http.Client{
+		{mode: upstreamProxyPolicyEnvironment}: sharedClient,
+	}
 	keyDeactivated := make([][]providerDeactivation, len(providers))
 	for i := range providers {
 		breakers[i] = newCircuitBreaker(cbCfg)
 		providerKeys[i] = providers[i].NormalizedAPIKeys()
+		providerProxyPolicies[i] = effectiveProviderProxyPolicy(providers[i], globalProxyMode, globalProxyURL)
+		if client, ok := policyClients[providerProxyPolicies[i]]; ok {
+			providerHTTPClients[i] = client
+		} else {
+			client = newProviderHTTPClient(providerProxyPolicies[i], providers[i].Name, sharedClient, dialer, responseHeaderTimeout)
+			policyClients[providerProxyPolicies[i]] = client
+			providerHTTPClients[i] = client
+		}
 		if len(providerKeys[i]) == 0 {
 			providerKeys[i] = []string{""}
 		}
@@ -283,6 +328,8 @@ func newClientProxy(clientType ClientType, mode config.ClientMode, pinnedProvide
 		responsesKeyIndex:      responsesKeyIndex,
 		geminiStreamKeyIndex:   geminiStreamKeyIndex,
 		telemetry:              store,
+		providerHTTPClients:    providerHTTPClients,
+		providerProxyPolicies:  providerProxyPolicies,
 		deactivated:            make([]providerDeactivation, len(providers)),
 		keyDeactivated:         keyDeactivated,
 		providerBusy:           make([]providerBusyState, len(providers)),
@@ -293,22 +340,70 @@ func newClientProxy(clientType ClientType, mode config.ClientMode, pinnedProvide
 		dynamicFeatureBindings: make(map[string]stickyLookupEntry),
 		routing:                defaultRoutingRuntimeSettings(),
 		breakers:               breakers,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				Proxy:                 http.ProxyFromEnvironment,
-				DialContext:           dialer.DialContext,
-				ForceAttemptHTTP2:     true,
-				MaxIdleConns:          100,
-				MaxIdleConnsPerHost:   10,
-				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: responseHeaderTimeout,
-				ExpectContinueTimeout: 1 * time.Second,
-				// Keep response bytes unchanged unless the client explicitly asks for compression.
-				DisableCompression: true,
-			},
+		httpClient:             sharedClient,
+	}
+}
+
+func newUpstreamHTTPClient(dialer *net.Dialer, responseHeaderTimeout time.Duration, proxy func(*http.Request) (*url.URL, error)) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 proxy,
+			DialContext:           dialer.DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   10,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: responseHeaderTimeout,
+			ExpectContinueTimeout: 1 * time.Second,
+			// Keep response bytes unchanged unless the client explicitly asks for compression.
+			DisableCompression: true,
 		},
 	}
+}
+
+func effectiveProviderProxyPolicy(provider config.Provider, globalMode config.GlobalUpstreamProxyMode, globalURL string) upstreamProxyPolicyKey {
+	switch provider.NormalizedProxyMode() {
+	case config.ProviderProxyModeDirect:
+		return upstreamProxyPolicyKey{mode: upstreamProxyPolicyDirect}
+	case config.ProviderProxyModeCustom:
+		return upstreamProxyPolicyKey{mode: upstreamProxyPolicyCustom, url: provider.CanonicalProxyURL()}
+	default:
+		switch globalMode {
+		case config.GlobalUpstreamProxyModeDirect:
+			return upstreamProxyPolicyKey{mode: upstreamProxyPolicyDirect}
+		case config.GlobalUpstreamProxyModeCustom:
+			return upstreamProxyPolicyKey{mode: upstreamProxyPolicyCustom, url: globalURL}
+		default:
+			return upstreamProxyPolicyKey{mode: upstreamProxyPolicyEnvironment}
+		}
+	}
+}
+
+func newProviderHTTPClient(policy upstreamProxyPolicyKey, providerName string, sharedClient *http.Client, dialer *net.Dialer, responseHeaderTimeout time.Duration) *http.Client {
+	switch policy.mode {
+	case upstreamProxyPolicyDirect:
+		return newUpstreamHTTPClient(dialer, responseHeaderTimeout, nil)
+	case upstreamProxyPolicyCustom:
+		proxyURL, err := config.ParseProxyURL(policy.url)
+		if err != nil {
+			logger.Warn("invalid custom proxy for provider %s; falling back to environment proxy settings", providerName)
+			return sharedClient
+		}
+		return newUpstreamHTTPClient(dialer, responseHeaderTimeout, http.ProxyURL(proxyURL))
+	default:
+		return sharedClient
+	}
+}
+
+func (cp *ClientProxy) upstreamHTTPClient(providerIndex int) *http.Client {
+	if cp == nil {
+		return nil
+	}
+	if providerIndex >= 0 && providerIndex < len(cp.providerHTTPClients) && cp.providerHTTPClients[providerIndex] != nil {
+		return cp.providerHTTPClients[providerIndex]
+	}
+	return cp.httpClient
 }
 
 func (cp *ClientProxy) applyRoutingRuntimeSettings(settings routingRuntimeSettings) {
@@ -613,16 +708,18 @@ func (r *Router) reloadProviderConfigsLocked() error {
 		logger.Warn("invalid runtime durations; defaulting to reactivate_after=1h upstream_idle_timeout=3m response_header_timeout=2m: %v", err)
 	}
 	cbCfg := normalizeCircuitBreakerConfig(newCfg.Global.CircuitBreaker)
+	globalProxyMode := newCfg.Global.NormalizedUpstreamProxyMode()
+	globalProxyURL := newCfg.Global.CanonicalUpstreamProxyURL()
 
 	newProxies := make(map[ClientType]*ClientProxy)
 	if ps := config.GetEnabledProviders(newCfg.Claude); len(ps) > 0 {
-		newProxies[ClientClaude] = newReloadedClientProxy(ClientClaude, newCfg.Claude.Mode, newCfg.Claude.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), oldProxies[ClientClaude], r.telemetry)
+		newProxies[ClientClaude] = newReloadedClientProxy(ClientClaude, newCfg.Claude.Mode, newCfg.Claude.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), globalProxyMode, globalProxyURL, oldProxies[ClientClaude], r.telemetry)
 	}
 	if ps := config.GetEnabledProviders(newCfg.OpenAI); len(ps) > 0 {
-		newProxies[ClientOpenAI] = newReloadedClientProxy(ClientOpenAI, newCfg.OpenAI.Mode, newCfg.OpenAI.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), oldProxies[ClientOpenAI], r.telemetry)
+		newProxies[ClientOpenAI] = newReloadedClientProxy(ClientOpenAI, newCfg.OpenAI.Mode, newCfg.OpenAI.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), globalProxyMode, globalProxyURL, oldProxies[ClientOpenAI], r.telemetry)
 	}
 	if ps := config.GetEnabledProviders(newCfg.Gemini); len(ps) > 0 {
-		newProxies[ClientGemini] = newReloadedClientProxy(ClientGemini, newCfg.Gemini.Mode, newCfg.Gemini.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), oldProxies[ClientGemini], r.telemetry)
+		newProxies[ClientGemini] = newReloadedClientProxy(ClientGemini, newCfg.Gemini.Mode, newCfg.Gemini.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), globalProxyMode, globalProxyURL, oldProxies[ClientGemini], r.telemetry)
 	}
 	r.reconcileTelemetryUsage(oldCfg, newCfg)
 
@@ -644,8 +741,8 @@ func (r *Router) reloadProviderConfigsLocked() error {
 	return nil
 }
 
-func newReloadedClientProxy(clientType ClientType, mode config.ClientMode, pinnedProvider string, providers []config.Provider, reactivateAfter time.Duration, upstreamIdle time.Duration, responseHeaderTimeout time.Duration, cbCfg circuitBreakerConfig, routing routingRuntimeSettings, old *ClientProxy, telemetryStore *telemetry.Store) *ClientProxy {
-	cp := newClientProxy(clientType, mode, pinnedProvider, providers, reactivateAfter, upstreamIdle, responseHeaderTimeout, cbCfg, telemetryStore)
+func newReloadedClientProxy(clientType ClientType, mode config.ClientMode, pinnedProvider string, providers []config.Provider, reactivateAfter time.Duration, upstreamIdle time.Duration, responseHeaderTimeout time.Duration, cbCfg circuitBreakerConfig, routing routingRuntimeSettings, globalProxyMode config.GlobalUpstreamProxyMode, globalProxyURL string, old *ClientProxy, telemetryStore *telemetry.Store) *ClientProxy {
+	cp := newClientProxyWithGlobalProxy(clientType, mode, pinnedProvider, providers, reactivateAfter, upstreamIdle, responseHeaderTimeout, cbCfg, globalProxyMode, globalProxyURL, telemetryStore)
 	cp.applyRoutingRuntimeSettings(routing)
 	if old != nil {
 		cp.inheritRuntimeState(old)
@@ -676,7 +773,7 @@ func (cp *ClientProxy) inheritRuntimeState(old *ClientProxy) {
 		if !ok {
 			continue
 		}
-		if !sameProviderRuntimeIdentity(cp.providers[newIdx], old.providers[oldIdx]) {
+		if !sameProviderRuntimeIdentity(cp.providers[newIdx], cp.providerProxyPolicies[newIdx], old.providers[oldIdx], old.providerProxyPolicies[oldIdx]) {
 			continue
 		}
 		cp.deactivated[newIdx] = old.deactivated[oldIdx]
@@ -691,7 +788,7 @@ func (cp *ClientProxy) inheritRuntimeState(old *ClientProxy) {
 		if !ok {
 			continue
 		}
-		if !sameProviderRuntimeIdentity(cp.providers[newIdx], old.providers[oldIdx]) {
+		if !sameProviderRuntimeIdentity(cp.providers[newIdx], cp.providerProxyPolicies[newIdx], old.providers[oldIdx], old.providerProxyPolicies[oldIdx]) {
 			continue
 		}
 		newByOldIndex[oldIdx] = newIdx
@@ -830,8 +927,10 @@ func inheritStickyRuntimeState(dst *ClientProxy, src *ClientProxy, indexMap map[
 	}
 }
 
-func sameProviderRuntimeIdentity(a, b config.Provider) bool {
-	return a.Name == b.Name && strings.TrimSpace(a.BaseURL) == strings.TrimSpace(b.BaseURL)
+func sameProviderRuntimeIdentity(a config.Provider, aPolicy upstreamProxyPolicyKey, b config.Provider, bPolicy upstreamProxyPolicyKey) bool {
+	return a.Name == b.Name &&
+		strings.TrimSpace(a.BaseURL) == strings.TrimSpace(b.BaseURL) &&
+		aPolicy == bPolicy
 }
 
 func providerIndexByName(providers []config.Provider, name string) int {

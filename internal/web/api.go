@@ -111,6 +111,13 @@ func (a *API) HandleUpdateGlobalConfig(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(req.ResponseHeaderTimeout) != "" {
 		cfg.Global.ResponseHeaderTimeout = req.ResponseHeaderTimeout
 	}
+	if err := config.ApplyUpstreamProxySettings(&cfg.Global, config.UpstreamProxySettingsPatch{
+		Mode: req.UpstreamProxyMode,
+		URL:  req.UpstreamProxyURL,
+	}); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	cfg.Global.MaxRequestBody = req.MaxRequestBodyBytes
 	cfg.Global.LogDir = req.LogDir
 	cfg.Global.LogRetentionDays = req.LogRetentionDays
@@ -332,6 +339,13 @@ func (a *API) HandleAddProvider(w http.ResponseWriter, r *http.Request) {
 		Enabled:  req.Enabled,
 	}
 	applyProviderOverrides(&provider, req)
+	if err := config.ApplyProviderProxySettings(&provider, config.ProviderProxySettingsPatch{
+		Mode: req.ProxyMode,
+		URL:  req.ProxyURL,
+	}, false); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	assignProviderKeys(&provider, keys)
 
 	cc.Providers = append(cc.Providers, provider)
@@ -416,7 +430,11 @@ func (a *API) HandleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updated := updateProviderInList(cc.Providers, providerName, req, keys)
+	updated, err := updateProviderInList(cc.Providers, providerName, req, keys)
+	if err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if updated {
 		if !a.saveClientConfigOrWriteError(w, clientType, cfg) {
 			return
@@ -1107,7 +1125,7 @@ func extractClientAndProvider(path string) (string, string) {
 	return "", ""
 }
 
-func updateProviderInList(providers []config.Provider, name string, req ProviderRequest, keys []string) bool {
+func updateProviderInList(providers []config.Provider, name string, req ProviderRequest, keys []string) (bool, error) {
 	for i := range providers {
 		if providers[i].Name == name {
 			if req.Name != "" {
@@ -1126,10 +1144,16 @@ func updateProviderInList(providers []config.Provider, name string, req Provider
 				providers[i].Enabled = req.Enabled
 			}
 			applyProviderOverrides(&providers[i], req)
-			return true
+			if err := config.ApplyProviderProxySettings(&providers[i], config.ProviderProxySettingsPatch{
+				Mode: req.ProxyMode,
+				URL:  req.ProxyURL,
+			}, true); err != nil {
+				return false, err
+			}
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func deleteProviderFromList(providers []config.Provider, name string) ([]config.Provider, bool) {
