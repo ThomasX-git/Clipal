@@ -276,6 +276,28 @@ func TestNewClientProxyWithGlobalProxy_SharesHTTPClientsByEffectivePolicy(t *tes
 	}
 }
 
+func TestNewClientProxyWithGlobalProxy_SharesHTTPClientsAcrossEquivalentCustomProxyForms(t *testing.T) {
+	t.Parallel()
+
+	cp := newClientProxyWithGlobalProxy(ClientOpenAI, config.ClientModeAuto, "", []config.Provider{
+		{Name: "plain", BaseURL: "http://plain.example", APIKey: "k1", ProxyMode: config.ProviderProxyModeCustom, ProxyURL: "http://proxy.example", Priority: 1},
+		{Name: "slash", BaseURL: "http://slash.example", APIKey: "k2", ProxyMode: config.ProviderProxyModeCustom, ProxyURL: "http://proxy.example/", Priority: 2},
+		{Name: "query", BaseURL: "http://query.example", APIKey: "k3", ProxyMode: config.ProviderProxyModeCustom, ProxyURL: "http://proxy.example?x=1", Priority: 3},
+		{Name: "userinfo", BaseURL: "http://userinfo.example", APIKey: "k4", ProxyMode: config.ProviderProxyModeCustom, ProxyURL: "http://USER:PASS@PROXY.EXAMPLE:80/path", Priority: 4},
+		{Name: "userinfo-plain", BaseURL: "http://userinfo-plain.example", APIKey: "k5", ProxyMode: config.ProviderProxyModeCustom, ProxyURL: "http://USER:PASS@proxy.example", Priority: 5},
+	}, time.Hour, 0, testResponseHeaderTimeout, circuitBreakerConfig{}, config.GlobalUpstreamProxyModeEnvironment, "")
+
+	if cp.upstreamHTTPClient(0) != cp.upstreamHTTPClient(1) || cp.upstreamHTTPClient(0) != cp.upstreamHTTPClient(2) {
+		t.Fatalf("equivalent authority-only custom proxy forms should share the same client")
+	}
+	if cp.upstreamHTTPClient(3) != cp.upstreamHTTPClient(4) {
+		t.Fatalf("equivalent custom proxy forms with matching userinfo should share the same client")
+	}
+	if cp.upstreamHTTPClient(0) == cp.upstreamHTTPClient(3) {
+		t.Fatalf("different proxy identities should not share the same client")
+	}
+}
+
 func TestNewClientProxy_UsesCustomSocksProxy(t *testing.T) {
 	t.Parallel()
 

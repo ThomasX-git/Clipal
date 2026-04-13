@@ -410,6 +410,79 @@ func TestReloadProviderConfigsLocked_PreservesRuntimeStateAcrossEquivalentGlobal
 	}
 }
 
+func TestReloadProviderConfigsLocked_PreservesRuntimeStateAcrossEquivalentProviderCustomProxyForms(t *testing.T) {
+	dir := t.TempDir()
+	global := config.DefaultGlobalConfig()
+	global.ListenAddr = "127.0.0.1"
+	global.Port = 3333
+
+	codex := config.ClientConfig{
+		Mode: config.ClientModeAuto,
+		Providers: []config.Provider{
+			{
+				Name:      "p1",
+				BaseURL:   "https://p1.example",
+				APIKey:    "k1",
+				Priority:  1,
+				ProxyMode: config.ProviderProxyModeCustom,
+				ProxyURL:  "http://proxy.example",
+			},
+		},
+	}
+	writeProxyReloadFixture(t, dir, global, codex)
+
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	router := NewRouter(cfg)
+	oldProxy := router.proxies[ClientOpenAI]
+	now := time.Now()
+
+	oldProxy.deactivated[0] = providerDeactivation{
+		at:      now.Add(-time.Second),
+		until:   now.Add(30 * time.Second),
+		reason:  "rate_limit",
+		status:  http.StatusTooManyRequests,
+		message: "slow down",
+	}
+	oldProxy.keyDeactivated[0][0] = providerDeactivation{
+		at:      now.Add(-time.Second),
+		until:   now.Add(20 * time.Second),
+		reason:  "rate_limit",
+		status:  http.StatusTooManyRequests,
+		message: "key cooldown",
+	}
+	oldProxy.breakers[0].state = circuitOpen
+	oldProxy.breakers[0].openedAt = now.Add(-5 * time.Second)
+
+	codex.Providers[0].ProxyURL = "HTTP://PROXY.EXAMPLE:80/?ignored=1"
+	writeProxyReloadFixture(t, dir, global, codex)
+
+	if err := router.reloadProviderConfigsLocked(); err != nil {
+		t.Fatalf("reloadProviderConfigsLocked: %v", err)
+	}
+
+	newProxy := router.proxies[ClientOpenAI]
+	wantPolicy := upstreamProxyPolicyKey{mode: upstreamProxyPolicyCustom, url: "http://proxy.example"}
+	if newProxy.providerProxyPolicies[0] != wantPolicy {
+		t.Fatalf("proxy policy = %#v, want %#v", newProxy.providerProxyPolicies[0], wantPolicy)
+	}
+	if newProxy.deactivated[0].reason != "rate_limit" || newProxy.deactivated[0].message != "slow down" {
+		t.Fatalf("deactivation = %#v", newProxy.deactivated[0])
+	}
+	if newProxy.keyDeactivated[0][0].message != "key cooldown" {
+		t.Fatalf("key deactivation = %#v", newProxy.keyDeactivated[0][0])
+	}
+	if newProxy.breakers[0].state != circuitOpen {
+		t.Fatalf("breaker state = %s, want open", newProxy.breakers[0].state)
+	}
+}
+
 func TestReloadProviderConfigsLocked_DoesNotPreserveSuppressionStateWhenBaseURLChanges(t *testing.T) {
 	router, dir := newReloadTestRouter(t)
 	oldProxy := router.proxies[ClientOpenAI]
