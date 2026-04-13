@@ -42,6 +42,7 @@ func TestCanonicalProxyURL(t *testing.T) {
 		{name: "userinfo with default port stripped", input: "http://user:pass@proxy.example:80", want: "http://user:pass@proxy.example"},
 		{name: "preserves path", input: "http://proxy.example:8080/path", want: "http://proxy.example:8080/path"},
 		{name: "preserves trailing slash", input: "http://proxy.example:8080/", want: "http://proxy.example:8080/"},
+		{name: "preserves query", input: "http://proxy.example:8080?x=1", want: "http://proxy.example:8080?x=1"},
 	}
 
 	for _, tt := range tests {
@@ -75,12 +76,64 @@ func TestCanonicalProxyURL_Equivalence(t *testing.T) {
 	}
 }
 
+func TestEffectiveProxyIdentity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "empty", input: "", want: ""},
+		{name: "trims whitespace", input: "  http://proxy.example:8080  ", want: "http://proxy.example:8080"},
+		{name: "lowercases host", input: "http://PROXY.EXAMPLE:8080", want: "http://proxy.example:8080"},
+		{name: "strips default port", input: "http://proxy.example:80", want: "http://proxy.example"},
+		{name: "preserves userinfo", input: "http://User:Pass@PROXY.EXAMPLE:80", want: "http://User:Pass@proxy.example"},
+		{name: "drops trailing slash", input: "http://proxy.example:8080/", want: "http://proxy.example:8080"},
+		{name: "drops path", input: "http://proxy.example:8080/path", want: "http://proxy.example:8080"},
+		{name: "drops query", input: "http://proxy.example:8080?x=1", want: "http://proxy.example:8080"},
+		{name: "drops fragment", input: "http://proxy.example:8080#frag", want: "http://proxy.example:8080"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := EffectiveProxyIdentity(tt.input)
+			if got != tt.want {
+				t.Errorf("EffectiveProxyIdentity(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEffectiveProxyIdentity_Equivalence(t *testing.T) {
+	t.Parallel()
+
+	pairs := []struct{ a, b string }{
+		{"http://proxy.example", "http://proxy.example/"},
+		{"http://proxy.example", "http://proxy.example?x=1"},
+		{"http://proxy.example:80", "http://proxy.example"},
+		{"http://USER:PASS@PROXY.EXAMPLE:80", "http://USER:PASS@proxy.example"},
+	}
+
+	for _, p := range pairs {
+		ca := EffectiveProxyIdentity(p.a)
+		cb := EffectiveProxyIdentity(p.b)
+		if ca != cb {
+			t.Errorf("EffectiveProxyIdentity(%q) = %q, EffectiveProxyIdentity(%q) = %q; want equal", p.a, ca, p.b, cb)
+		}
+	}
+}
+
 func TestProvider_CanonicalProxyURL(t *testing.T) {
 	t.Parallel()
 
 	p := Provider{ProxyURL: "  HTTP://PROXY.EXAMPLE:80  "}
 	if got := p.CanonicalProxyURL(); got != "http://proxy.example" {
 		t.Errorf("Provider.CanonicalProxyURL() = %q, want %q", got, "http://proxy.example")
+	}
+	if got := p.EffectiveProxyIdentity(); got != "http://proxy.example" {
+		t.Errorf("Provider.EffectiveProxyIdentity() = %q, want %q", got, "http://proxy.example")
 	}
 	// Normalized accessor preserves original text
 	if got := p.NormalizedProxyURL(); got != "HTTP://PROXY.EXAMPLE:80" {
@@ -94,6 +147,9 @@ func TestGlobalConfig_CanonicalUpstreamProxyURL(t *testing.T) {
 	g := GlobalConfig{UpstreamProxyURL: "  HTTP://PROXY.EXAMPLE:80  "}
 	if got := g.CanonicalUpstreamProxyURL(); got != "http://proxy.example" {
 		t.Errorf("GlobalConfig.CanonicalUpstreamProxyURL() = %q, want %q", got, "http://proxy.example")
+	}
+	if got := g.EffectiveUpstreamProxyIdentity(); got != "http://proxy.example" {
+		t.Errorf("GlobalConfig.EffectiveUpstreamProxyIdentity() = %q, want %q", got, "http://proxy.example")
 	}
 	// Normalized accessor preserves original text
 	if got := g.NormalizedUpstreamProxyURL(); got != "HTTP://PROXY.EXAMPLE:80" {

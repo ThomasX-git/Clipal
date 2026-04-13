@@ -28,10 +28,11 @@ func ParseProxyURL(raw string) (*url.URL, error) {
 	}
 }
 
-// CanonicalProxyURL returns a canonical form of the given proxy URL.
+// CanonicalProxyURL returns a canonical text form of the given proxy URL.
 // It trims whitespace, parses and validates the URL via ParseProxyURL, and
-// normalizes the result so that semantically equivalent URLs
-// (e.g. differing only in host case or default port) produce identical strings.
+// normalizes the result so that equivalent textual forms
+// (for example differing only in host case or default port) produce identical
+// strings while preserving the rest of the URL as configured.
 // If the URL is empty or cannot be parsed, the trimmed input is returned unchanged.
 func CanonicalProxyURL(raw string) string {
 	trimmed := strings.TrimSpace(raw)
@@ -46,6 +47,29 @@ func CanonicalProxyURL(raw string) string {
 		return trimmed
 	}
 	parsed.Host = canonicalHost(parsed.Host, parsed.Scheme)
+	return parsed.String()
+}
+
+// EffectiveProxyIdentity returns the runtime identity used for proxy policy
+// comparison and transport sharing. It normalizes the authority portion of the
+// URL and discards path, query, and fragment fields because they do not affect
+// which proxy endpoint the runtime connects to.
+// If the URL is empty or cannot be parsed, the trimmed input is returned unchanged.
+func EffectiveProxyIdentity(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	parsed, err := ParseProxyURL(trimmed)
+	if err != nil {
+		return trimmed
+	}
+	parsed.Host = canonicalHost(parsed.Host, parsed.Scheme)
+	parsed.Path = ""
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	parsed.ForceQuery = false
 	return parsed.String()
 }
 

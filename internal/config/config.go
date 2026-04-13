@@ -352,10 +352,16 @@ func (g GlobalConfig) NormalizedUpstreamProxyURL() string {
 	return strings.TrimSpace(g.UpstreamProxyURL)
 }
 
-// CanonicalUpstreamProxyURL returns a canonicalized upstream proxy URL suitable
-// for policy key construction and identity comparison.
+// CanonicalUpstreamProxyURL returns the canonical text form of the configured
+// upstream proxy URL.
 func (g GlobalConfig) CanonicalUpstreamProxyURL() string {
 	return CanonicalProxyURL(g.UpstreamProxyURL)
+}
+
+// EffectiveUpstreamProxyIdentity returns the runtime proxy identity used for
+// policy key construction and reload identity comparison.
+func (g GlobalConfig) EffectiveUpstreamProxyIdentity() string {
+	return EffectiveProxyIdentity(g.UpstreamProxyURL)
 }
 
 func (p Provider) NormalizedProxyMode() ProviderProxyMode {
@@ -370,10 +376,16 @@ func (p Provider) NormalizedProxyURL() string {
 	return strings.TrimSpace(p.ProxyURL)
 }
 
-// CanonicalProxyURL returns a canonicalized provider proxy URL suitable
-// for policy key construction and identity comparison.
+// CanonicalProxyURL returns the canonical text form of the configured provider
+// proxy URL.
 func (p Provider) CanonicalProxyURL() string {
 	return CanonicalProxyURL(p.ProxyURL)
+}
+
+// EffectiveProxyIdentity returns the runtime proxy identity used for policy key
+// construction and reload identity comparison.
+func (p Provider) EffectiveProxyIdentity() string {
+	return EffectiveProxyIdentity(p.ProxyURL)
 }
 
 func ApplyUpstreamProxySettings(global *GlobalConfig, patch UpstreamProxySettingsPatch) error {
