@@ -149,7 +149,3 @@ func testJWT(email string, accountID string) string {
 func encodeSegment(v string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(v))
 }
-
-func base64URLEncode(v []byte) string {
-	return base64.RawURLEncoding.EncodeToString(v)
-}

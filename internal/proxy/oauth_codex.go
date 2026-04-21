@@ -409,5 +409,6 @@ func (cp *ClientProxy) doPreparedProviderRequest(proxyReq *http.Request, provide
 	proxyReq.GetBody = func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
+	//nolint:gosec // proxyReq.URL is controlled by buildCodexOAuthRequest, not user input
 	return cp.upstreamHTTPClient(providerIndex).Do(proxyReq)
 }

@@ -512,9 +512,14 @@ func startOAuthSession(t *testing.T, api *API) startedOAuthSession {
 		t.Fatalf("start status=%d body=%s", w.Result().StatusCode, w.Body.String())
 	}
 	got := testutil.DecodeJSONMap(t, w.Body.Bytes())
+	sessionID, ok1 := got["session_id"].(string)
+	authURL, ok2 := got["auth_url"].(string)
+	if !ok1 || !ok2 {
+		t.Fatalf("missing or invalid session_id/auth_url in response: %#v", got)
+	}
 	return startedOAuthSession{
-		SessionID: got["session_id"].(string),
-		AuthURL:   got["auth_url"].(string),
+		SessionID: sessionID,
+		AuthURL:   authURL,
 	}
 }
 

@@ -252,11 +252,11 @@ func sanitizeCredentialFileComponent(v string) string {
 	for _, r := range v {
 		switch {
 		case r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|':
-			b.WriteByte('_')
+			_, _ = b.WriteByte('_')
 		case r < 0x20 || r == 0x7f:
-			b.WriteByte('_')
+			_, _ = b.WriteByte('_')
 		default:
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		}
 	}
 	return strings.TrimSpace(b.String())

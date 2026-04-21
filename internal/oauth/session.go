@@ -361,12 +361,15 @@ func startCallbackServer(host string, port int, path string) (*callbackServer, s
 		_ = server.server.Serve(listener)
 	}()
 
-	addr := listener.Addr().(*net.TCPAddr)
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return nil, "", fmt.Errorf("listener address is not TCP")
+	}
 	redirectHost := host
 	if redirectHost == "" || redirectHost == "0.0.0.0" || redirectHost == "::" {
 		redirectHost = "127.0.0.1"
 	}
-	redirectURI := "http://" + net.JoinHostPort(redirectHost, strconv.Itoa(addr.Port)) + path
+	redirectURI := "http://" + net.JoinHostPort(redirectHost, strconv.Itoa(tcpAddr.Port)) + path
 	return server, redirectURI, nil
 }
 

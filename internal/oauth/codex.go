@@ -261,12 +261,12 @@ func slugify(v string) string {
 	for _, r := range v {
 		isAlphaNum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
 		if isAlphaNum {
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 			lastDash = false
 			continue
 		}
 		if !lastDash {
-			b.WriteByte('-')
+			_, _ = b.WriteByte('-')
 			lastDash = true
 		}
 	}
