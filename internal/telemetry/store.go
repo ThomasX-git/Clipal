@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -25,6 +26,11 @@ type UsageDelta struct {
 type UsageSnapshot struct {
 	UsageDelta
 	Usage map[string]any `json:"usage,omitempty"`
+}
+
+type ProviderRef struct {
+	ClientType string
+	Provider   string
 }
 
 type RecordOptions struct {
@@ -240,20 +246,7 @@ func (s *Store) RenameProvider(clientType string, from string, to string) error 
 		return nil
 	}
 	if existing, exists := client.Providers[to]; exists {
-		entry.RequestCount += existing.RequestCount
-		entry.SuccessCount += existing.SuccessCount
-		entry.InputTokens += existing.InputTokens
-		entry.OutputTokens += existing.OutputTokens
-		entry.TotalTokens += existing.TotalTokens
-		if existing.LastUsedAt.After(entry.LastUsedAt) {
-			entry.LastUsedAt = existing.LastUsedAt
-			if existing.Usage != nil {
-				entry.Usage = cloneMap(existing.Usage)
-			}
-		}
-		if entry.Usage == nil && existing.Usage != nil {
-			entry.Usage = cloneMap(existing.Usage)
-		}
+		entry = mergeProviderUsage(entry, existing)
 	}
 	delete(client.Providers, from)
 	client.Providers[to] = entry
@@ -295,6 +288,33 @@ func (s *Store) DeleteProvider(clientType string, provider string) error {
 	s.revision++
 	s.mu.Unlock()
 	return s.Flush()
+}
+
+func (s *Store) DeleteProvidersWithRollback(refs []ProviderRef) (func() error, error) {
+	if s == nil {
+		return func() error { return nil }, nil
+	}
+
+	refs = normalizeProviderRefs(refs)
+	if len(refs) == 0 {
+		return func() error { return nil }, nil
+	}
+
+	deleted := s.deleteProviders(refs)
+	if len(deleted) == 0 {
+		return func() error { return nil }, nil
+	}
+
+	if err := s.Flush(); err != nil {
+		if restoreErr := s.restoreProviders(deleted); restoreErr != nil {
+			return nil, fmt.Errorf("flush deleted providers: %w (rollback failed: %v)", err, restoreErr)
+		}
+		return nil, err
+	}
+
+	return func() error {
+		return s.restoreProviders(deleted)
+	}, nil
 }
 
 func (s *Store) Flush() error {
@@ -354,6 +374,130 @@ func cloneState(state storeState) storeState {
 			nextClient.Providers[providerName] = usage
 		}
 		out.Clients[clientName] = nextClient
+	}
+	return out
+}
+
+func normalizeProviderRefs(refs []ProviderRef) []ProviderRef {
+	seen := make(map[string]struct{}, len(refs))
+	out := make([]ProviderRef, 0, len(refs))
+	for _, ref := range refs {
+		clientType := strings.TrimSpace(ref.ClientType)
+		provider := strings.TrimSpace(ref.Provider)
+		if clientType == "" || provider == "" {
+			continue
+		}
+		key := clientType + "\x00" + provider
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, ProviderRef{ClientType: clientType, Provider: provider})
+	}
+	return out
+}
+
+func (s *Store) deleteProviders(refs []ProviderRef) map[string]map[string]ProviderUsage {
+	now := time.Now()
+	deleted := make(map[string]map[string]ProviderUsage)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var changed bool
+	for _, ref := range refs {
+		client, ok := s.state.Clients[ref.ClientType]
+		if !ok || client.Providers == nil {
+			continue
+		}
+		entry, ok := client.Providers[ref.Provider]
+		if !ok {
+			continue
+		}
+		if deleted[ref.ClientType] == nil {
+			deleted[ref.ClientType] = make(map[string]ProviderUsage)
+		}
+		deleted[ref.ClientType][ref.Provider] = cloneProviderUsage(entry)
+		delete(client.Providers, ref.Provider)
+		if len(client.Providers) == 0 {
+			delete(s.state.Clients, ref.ClientType)
+		} else {
+			s.state.Clients[ref.ClientType] = client
+		}
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	s.state.Version = storeVersion
+	s.state.UpdatedAt = now
+	s.dirty = true
+	s.revision++
+	return deleted
+}
+
+func (s *Store) restoreProviders(deleted map[string]map[string]ProviderUsage) error {
+	if s == nil || len(deleted) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	s.mu.Lock()
+	var changed bool
+	for clientType, providers := range deleted {
+		if len(providers) == 0 {
+			continue
+		}
+		client := s.state.Clients[clientType]
+		if client.Providers == nil {
+			client.Providers = make(map[string]ProviderUsage)
+		}
+		for provider, usage := range providers {
+			if existing, ok := client.Providers[provider]; ok {
+				client.Providers[provider] = mergeProviderUsage(existing, usage)
+			} else {
+				client.Providers[provider] = cloneProviderUsage(usage)
+			}
+			changed = true
+		}
+		s.state.Clients[clientType] = client
+	}
+	if changed {
+		s.state.Version = storeVersion
+		s.state.UpdatedAt = now
+		s.dirty = true
+		s.revision++
+	}
+	s.mu.Unlock()
+
+	if !changed {
+		return nil
+	}
+	return s.Flush()
+}
+
+func cloneProviderUsage(usage ProviderUsage) ProviderUsage {
+	if usage.Usage != nil {
+		usage.Usage = cloneMap(usage.Usage)
+	}
+	return usage
+}
+
+func mergeProviderUsage(left ProviderUsage, right ProviderUsage) ProviderUsage {
+	out := cloneProviderUsage(left)
+	out.RequestCount += right.RequestCount
+	out.SuccessCount += right.SuccessCount
+	out.InputTokens += right.InputTokens
+	out.OutputTokens += right.OutputTokens
+	out.TotalTokens += right.TotalTokens
+	if right.LastUsedAt.After(out.LastUsedAt) {
+		out.LastUsedAt = right.LastUsedAt
+		if right.Usage != nil {
+			out.Usage = cloneMap(right.Usage)
+		}
+	}
+	if out.Usage == nil && right.Usage != nil {
+		out.Usage = cloneMap(right.Usage)
 	}
 	return out
 }

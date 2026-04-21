@@ -15,6 +15,7 @@ import (
 var staticFiles embed.FS
 
 const maxAPIRequestBytes = 1 << 20 // 1 MiB (WebUI requests are small)
+const maxOAuthImportRequestBytes = 16 << 20
 
 // Handler manages HTTP routes for the web management interface
 type Handler struct {
@@ -70,6 +71,24 @@ func isStateChangingMethod(m string) bool {
 	}
 }
 
+func isOAuthCLIProxyAPIImportPath(path string) bool {
+	return strings.TrimSuffix(strings.TrimSpace(path), "/") == "/api/oauth/import/cli-proxy-api"
+}
+
+func apiRequestBodyLimit(path string) int64 {
+	if isOAuthCLIProxyAPIImportPath(path) {
+		return maxOAuthImportRequestBytes
+	}
+	return maxAPIRequestBytes
+}
+
+func isAllowedAPIRequestMediaType(path string, mediaType string) bool {
+	if isOAuthCLIProxyAPIImportPath(path) {
+		return mediaType == "multipart/form-data"
+	}
+	return mediaType == "application/json"
+}
+
 func (h *Handler) localOnly(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// The management interface is designed for local use only (no auth).
@@ -92,7 +111,7 @@ func (h *Handler) localOnly(next http.HandlerFunc) http.HandlerFunc {
 
 		// Put a hard cap on WebUI request bodies to avoid unbounded memory usage.
 		if strings.HasPrefix(r.URL.Path, "/api/") && r.Body != nil {
-			r.Body = http.MaxBytesReader(w, r.Body, maxAPIRequestBytes)
+			r.Body = http.MaxBytesReader(w, r.Body, apiRequestBodyLimit(r.URL.EscapedPath()))
 		}
 
 		// Basic CSRF hardening for state-changing API calls: require an explicit
@@ -108,8 +127,12 @@ func (h *Handler) localOnly(next http.HandlerFunc) http.HandlerFunc {
 			// This prevents accidental form-encoded submissions and keeps semantics clear.
 			if r.Method != http.MethodDelete && (r.ContentLength != 0 || r.Header.Get("Content-Type") != "") {
 				mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-				if err != nil || mt != "application/json" {
-					writeError(w, "unsupported media type: expected application/json", http.StatusUnsupportedMediaType)
+				if err != nil || !isAllowedAPIRequestMediaType(r.URL.EscapedPath(), mt) {
+					expected := "application/json"
+					if isOAuthCLIProxyAPIImportPath(r.URL.EscapedPath()) {
+						expected = "multipart/form-data"
+					}
+					writeError(w, "unsupported media type: expected "+expected, http.StatusUnsupportedMediaType)
 					return
 				}
 			}
@@ -134,6 +157,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/api/client-config/", h.localOnly(h.routeClientConfig))
 	mux.HandleFunc("/api/providers/", h.localOnly(h.routeProviders))
+	mux.HandleFunc("/api/oauth/", h.localOnly(h.routeOAuth))
 	mux.HandleFunc("/api/status", h.localOnly(h.api.HandleGetStatus))
 
 	// Service management (OS background service for clipal)
@@ -245,6 +269,32 @@ func (h *Handler) routeProviders(w http.ResponseWriter, r *http.Request) {
 			writeError(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	} else {
+		writeError(w, "invalid request path", http.StatusBadRequest)
+	}
+}
+
+func (h *Handler) routeOAuth(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimSuffix(r.URL.EscapedPath(), "/")
+	switch {
+	case path == "/api/oauth/providers":
+		h.api.HandleListOAuthProviders(w, r)
+	case path == "/api/oauth/providers/start":
+		h.api.HandleStartOAuthProvider(w, r)
+	case path == "/api/oauth/import/cli-proxy-api":
+		h.api.HandleImportCLIProxyAPICredentials(w, r)
+	case strings.HasPrefix(path, "/api/oauth/sessions/"):
+		h.api.HandleGetOAuthSession(w, r)
+	case strings.HasPrefix(path, "/api/oauth/accounts/"):
+		if r.Method == http.MethodGet {
+			h.api.HandleListOAuthAccounts(w, r)
+			return
+		}
+		if r.Method == http.MethodDelete {
+			h.api.HandleDeleteOAuthAccount(w, r)
+			return
+		}
+		writeError(w, "method not allowed", http.StatusMethodNotAllowed)
+	default:
 		writeError(w, "invalid request path", http.StatusBadRequest)
 	}
 }

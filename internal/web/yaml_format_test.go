@@ -134,6 +134,59 @@ func TestFormatClientConfigYAML_UsesAPIKeysForMultiKeyProvider(t *testing.T) {
 	}
 }
 
+func TestFormatClientConfigYAML_OAuthProviderYAML(t *testing.T) {
+	cc := config.ClientConfig{
+		Providers: []config.Provider{
+			{
+				Name:          "codex-sean-example-com",
+				AuthType:      config.ProviderAuthTypeOAuth,
+				OAuthProvider: config.OAuthProviderCodex,
+				OAuthRef:      "codex_acct_123",
+				Priority:      1,
+				Enabled:       boolPtr(true),
+			},
+		},
+	}
+
+	got := string(formatClientConfigYAML("openai", cc))
+	for _, want := range []string{
+		`name: "codex-sean-example-com"`,
+		`auth_type: "oauth"`,
+		`oauth_provider: "codex"`,
+		`oauth_ref: "codex_acct_123"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected output to contain %q\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "api_key:") {
+		t.Fatalf("did not expect api_key field for oauth provider, got:\n%s", got)
+	}
+	if strings.Contains(got, "api_keys:\n") {
+		t.Fatalf("did not expect api_keys block for oauth provider, got:\n%s", got)
+	}
+	if strings.Contains(got, "base_url:") {
+		t.Fatalf("did not expect base_url for oauth provider without explicit override, got:\n%s", got)
+	}
+
+	var parsed config.ClientConfig
+	if err := yaml.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v\n%s", err, got)
+	}
+	if len(parsed.Providers) != 1 {
+		t.Fatalf("providers len = %d, want 1", len(parsed.Providers))
+	}
+	if got := parsed.Providers[0].NormalizedAuthType(); got != config.ProviderAuthTypeOAuth {
+		t.Fatalf("auth_type = %q, want %q", got, config.ProviderAuthTypeOAuth)
+	}
+	if got := parsed.Providers[0].NormalizedOAuthProvider(); got != config.OAuthProviderCodex {
+		t.Fatalf("oauth_provider = %q, want %q", got, config.OAuthProviderCodex)
+	}
+	if got := parsed.Providers[0].NormalizedOAuthRef(); got != "codex_acct_123" {
+		t.Fatalf("oauth_ref = %q", got)
+	}
+}
+
 func TestFormatClientConfigYAML_SingleNormalizedKeyUsesAPIKeyField(t *testing.T) {
 	cc := config.ClientConfig{
 		Providers: []config.Provider{

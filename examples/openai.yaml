@@ -26,3 +26,13 @@ providers:
       - "sk-or-yyy"
     priority: 2
     enabled: true
+
+  # OAuth provider - recommended to add from the Web UI authorization flow.
+  # Phase 1 supports only Codex-authorized OpenAI Responses upstreams.
+  # Credentials are stored separately under ~/.clipal/oauth/, not in YAML.
+  - name: "codex-sean-example-com"
+    auth_type: "oauth"
+    oauth_provider: "codex"
+    oauth_ref: "codex-sean-example-com"
+    priority: 3
+    enabled: true

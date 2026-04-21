@@ -15,6 +15,7 @@ import (
 	"github.com/lansespirit/Clipal/internal/config"
 	"github.com/lansespirit/Clipal/internal/integration"
 	"github.com/lansespirit/Clipal/internal/logger"
+	oauthpkg "github.com/lansespirit/Clipal/internal/oauth"
 	"github.com/lansespirit/Clipal/internal/proxy"
 	"github.com/lansespirit/Clipal/internal/telemetry"
 )
@@ -32,6 +33,9 @@ type API struct {
 	runtime      *proxy.Router
 	telemetry    *telemetry.Store
 	integrations *integration.Manager
+	oauth        *oauthpkg.Service
+	oauthMu      sync.Mutex
+	oauthTargets map[string]string
 	configMu     sync.Mutex
 }
 
@@ -53,6 +57,8 @@ func NewAPI(configDir, version string, runtime *proxy.Router) *API {
 		runtime:      runtime,
 		telemetry:    telemetryStore,
 		integrations: integration.NewManager(configDir),
+		oauth:        oauthpkg.NewService(configDir),
+		oauthTargets: make(map[string]string),
 	}
 }
 
@@ -177,7 +183,7 @@ func (a *API) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, toProviderResponses(cc.Providers, a.providerUsageSnapshots(clientType)))
+	writeJSON(w, a.toProviderResponses(cc.Providers, a.providerUsageSnapshots(clientType)))
 }
 
 func (a *API) HandleGetClientConfig(w http.ResponseWriter, r *http.Request) {
@@ -272,14 +278,18 @@ func (a *API) HandleAddProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
+	normalizeProviderRequest(&req)
 	req.Overrides = normalizeProviderOverrideRequest(req.Overrides)
 	if err := validateProviderOverrideRequest(clientType, req.Overrides); err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if providerRequestUsesOAuth(req) {
+		writeError(w, "oauth providers must be created via oauth authorization flow", http.StatusBadRequest)
+		return
+	}
 
-	name := strings.TrimSpace(req.Name)
-	baseURL := strings.TrimSpace(req.BaseURL)
+	name := req.Name
 	keys, err := normalizeProviderKeys(req)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
@@ -289,14 +299,6 @@ func (a *API) HandleAddProvider(w http.ResponseWriter, r *http.Request) {
 	// Validate provider fields (name is used as a URL identifier).
 	if err := validateProviderName(name); err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if _, err := validateBaseURL(baseURL); err != nil {
-		writeError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if len(keys) == 0 {
-		writeError(w, "api_key or api_keys is required", http.StatusBadRequest)
 		return
 	}
 
@@ -332,21 +334,11 @@ func (a *API) HandleAddProvider(w http.ResponseWriter, r *http.Request) {
 		priority = nextProviderPriority(cc.Providers)
 	}
 
-	provider := config.Provider{
-		Name:     name,
-		BaseURL:  baseURL,
-		Priority: priority,
-		Enabled:  req.Enabled,
-	}
-	applyProviderOverrides(&provider, req)
-	if err := config.ApplyProviderProxySettings(&provider, config.ProviderProxySettingsPatch{
-		Mode: req.ProxyMode,
-		URL:  req.ProxyURL,
-	}, false); err != nil {
+	provider, err := providerFromCreateRequest(clientType, req, priority, keys)
+	if err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	assignProviderKeys(&provider, keys)
 
 	cc.Providers = append(cc.Providers, provider)
 	if !a.saveClientConfigOrWriteError(w, clientType, cfg) {
@@ -375,6 +367,7 @@ func (a *API) HandleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
+	normalizeProviderRequest(&req)
 	req.Overrides = normalizeProviderOverrideRequest(req.Overrides)
 	if err := validateProviderOverrideRequest(clientType, req.Overrides); err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
@@ -383,15 +376,7 @@ func (a *API) HandleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 
 	// Normalize/validate optional fields.
 	if strings.TrimSpace(req.Name) != "" {
-		req.Name = strings.TrimSpace(req.Name)
 		if err := validateProviderName(req.Name); err != nil {
-			writeError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-	}
-	if strings.TrimSpace(req.BaseURL) != "" {
-		req.BaseURL = strings.TrimSpace(req.BaseURL)
-		if _, err := validateBaseURL(req.BaseURL); err != nil {
 			writeError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -422,6 +407,21 @@ func (a *API) HandleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	current := providerByName(cc.Providers, providerName)
+	if current == nil {
+		writeError(w, "provider not found", http.StatusNotFound)
+		return
+	}
+	if current.UsesOAuth() {
+		if !isOAuthEnabledOnlyUpdate(req) {
+			writeError(w, "oauth providers cannot be edited; reauthorize or delete the account", http.StatusBadRequest)
+			return
+		}
+	} else if providerRequestUsesOAuth(req) {
+		writeError(w, "existing providers cannot be converted to oauth; reauthorize instead", http.StatusBadRequest)
+		return
+	}
+
 	// Reject renames that collide with another provider in the same client config.
 	if req.Name != "" && req.Name != providerName {
 		if providerNameExists(cc.Providers, req.Name) {
@@ -430,7 +430,7 @@ func (a *API) HandleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updated, err := updateProviderInList(cc.Providers, providerName, req, keys)
+	updated, err := updateProviderInList(clientType, cc.Providers, providerName, req, keys)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -479,6 +479,22 @@ func (a *API) HandleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 	cc, err := getClientConfigRef(cfg, clientType)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	current := providerByName(cc.Providers, providerName)
+	if current == nil {
+		writeError(w, "provider not found", http.StatusNotFound)
+		return
+	}
+	if current.UsesOAuth() {
+		_, err := a.deleteOAuthAccountLocked(cfg, current.NormalizedOAuthProvider(), current.NormalizedOAuthRef())
+		if err != nil {
+			writeAPIError(w, newAPIError(http.StatusInternalServerError, fmt.Sprintf("failed to delete oauth account: %v", err), err))
+			return
+		}
+		logger.Info("oauth account %s/%s deleted via provider removal", current.NormalizedOAuthProvider(), current.NormalizedOAuthRef())
+		writeJSON(w, SuccessResponse{Message: "oauth account deleted successfully"})
 		return
 	}
 
@@ -944,6 +960,147 @@ func providerNameExists(providers []config.Provider, name string) bool {
 	return false
 }
 
+func providerByName(providers []config.Provider, name string) *config.Provider {
+	for i := range providers {
+		if providers[i].Name == name {
+			return &providers[i]
+		}
+	}
+	return nil
+}
+
+type linkedOAuthProviderRef struct {
+	ClientType   string
+	ProviderName string
+}
+
+func collectLinkedOAuthProviders(cfg *config.Config, provider config.OAuthProvider, ref string) []linkedOAuthProviderRef {
+	out := make([]linkedOAuthProviderRef, 0)
+	if cfg == nil {
+		return out
+	}
+	appendClient := func(clientType string, providers []config.Provider) {
+		for _, p := range providers {
+			if p.UsesOAuth() &&
+				p.NormalizedOAuthProvider() == provider &&
+				p.NormalizedOAuthRef() == ref {
+				out = append(out, linkedOAuthProviderRef{
+					ClientType:   clientType,
+					ProviderName: p.Name,
+				})
+			}
+		}
+	}
+	appendClient("claude", cfg.Claude.Providers)
+	appendClient("openai", cfg.OpenAI.Providers)
+	appendClient("gemini", cfg.Gemini.Providers)
+	return out
+}
+
+func normalizeClientConfigAfterProviderDeletion(cc *config.ClientConfig, removedNames map[string]struct{}) {
+	if cc == nil {
+		return
+	}
+	pin := strings.TrimSpace(cc.PinnedProvider)
+	if pin == "" {
+		return
+	}
+	if _, removed := removedNames[pin]; !removed {
+		return
+	}
+	cc.PinnedProvider = ""
+	if cc.Mode == config.ClientModeManual {
+		cc.Mode = config.ClientModeAuto
+	}
+}
+
+func (a *API) deleteOAuthAccountLocked(cfg *config.Config, provider config.OAuthProvider, ref string) ([]linkedOAuthProviderRef, error) {
+	if a == nil || a.oauth == nil {
+		return nil, fmt.Errorf("oauth service is unavailable")
+	}
+	provider = config.OAuthProvider(strings.ToLower(strings.TrimSpace(string(provider))))
+	ref = strings.TrimSpace(ref)
+	if provider == "" || ref == "" {
+		return nil, fmt.Errorf("invalid oauth account")
+	}
+
+	linked := collectLinkedOAuthProviders(cfg, provider, ref)
+	touchedClients := make(map[string]*config.ClientConfig)
+	removedByClient := make(map[string]map[string]struct{})
+	for _, item := range linked {
+		cc, err := getClientConfigRef(cfg, item.ClientType)
+		if err != nil {
+			return nil, err
+		}
+		cc.Providers, _ = deleteProviderFromList(cc.Providers, item.ProviderName)
+		touchedClients[item.ClientType] = cc
+		if removedByClient[item.ClientType] == nil {
+			removedByClient[item.ClientType] = make(map[string]struct{})
+		}
+		removedByClient[item.ClientType][item.ProviderName] = struct{}{}
+	}
+	for clientType, cc := range touchedClients {
+		normalizeClientConfigAfterProviderDeletion(cc, removedByClient[clientType])
+	}
+	if len(touchedClients) > 0 {
+		if err := cfg.Validate(); err != nil {
+			return nil, err
+		}
+	}
+
+	restores := make([]func() error, 0, len(touchedClients)+1)
+	rollback := func() {
+		for i := len(restores) - 1; i >= 0; i-- {
+			if restores[i] != nil {
+				_ = restores[i]()
+			}
+		}
+	}
+
+	restoreOAuth, err := a.oauth.Store().DeleteWithRollback(provider, ref)
+	if err != nil {
+		return nil, err
+	}
+	restores = append(restores, restoreOAuth)
+
+	if len(linked) > 0 && a.telemetry != nil {
+		refs := make([]telemetry.ProviderRef, 0, len(linked))
+		for _, item := range linked {
+			refs = append(refs, telemetry.ProviderRef{
+				ClientType: item.ClientType,
+				Provider:   item.ProviderName,
+			})
+		}
+		restoreTelemetry, err := a.telemetry.DeleteProvidersWithRollback(refs)
+		if err != nil {
+			rollback()
+			return nil, err
+		}
+		restores = append(restores, restoreTelemetry)
+	}
+
+	for _, clientType := range []string{"claude", "openai", "gemini"} {
+		cc := touchedClients[clientType]
+		if cc == nil {
+			continue
+		}
+		restore, err := a.saveClientConfigWithRollback(clientType, *cc)
+		if err != nil {
+			rollback()
+			return nil, err
+		}
+		restores = append(restores, restore)
+	}
+
+	if len(touchedClients) > 0 {
+		if err := a.reloadRuntimeProviderConfigs(); err != nil {
+			rollback()
+			return nil, err
+		}
+	}
+	return linked, nil
+}
+
 func nextProviderPriority(providers []config.Provider) int {
 	maxPriority := 0
 	for _, p := range providers {
@@ -979,6 +1136,38 @@ func normalizeProviderKeys(req ProviderRequest) ([]string, error) {
 		appendKey(key)
 	}
 	return keys, nil
+}
+
+func normalizeProviderRequest(req *ProviderRequest) {
+	if req == nil {
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.BaseURL = strings.TrimSpace(req.BaseURL)
+	req.AuthType = config.ProviderAuthType(strings.ToLower(strings.TrimSpace(string(req.AuthType))))
+	req.OAuthProvider = config.OAuthProvider(strings.ToLower(strings.TrimSpace(string(req.OAuthProvider))))
+	req.OAuthRef = strings.TrimSpace(req.OAuthRef)
+}
+
+func providerRequestUsesOAuth(req ProviderRequest) bool {
+	return req.AuthType == config.ProviderAuthTypeOAuth ||
+		strings.TrimSpace(string(req.OAuthProvider)) != "" ||
+		strings.TrimSpace(req.OAuthRef) != ""
+}
+
+func isOAuthEnabledOnlyUpdate(req ProviderRequest) bool {
+	return req.Enabled != nil &&
+		req.Name == "" &&
+		req.BaseURL == "" &&
+		req.APIKey == "" &&
+		len(req.APIKeys) == 0 &&
+		req.AuthType == "" &&
+		req.OAuthProvider == "" &&
+		req.OAuthRef == "" &&
+		req.ProxyMode == nil &&
+		req.ProxyURL == nil &&
+		req.Overrides == nil &&
+		req.Priority == nil
 }
 
 func trimStringPtr(v *string) *string {
@@ -1090,6 +1279,119 @@ func applyProviderOverrides(provider *config.Provider, req ProviderRequest) {
 	provider.Overrides = config.NormalizeProviderOverrides(provider.Overrides)
 }
 
+func providerFromCreateRequest(clientType string, req ProviderRequest, priority int, keys []string) (config.Provider, error) {
+	provider := config.Provider{
+		Name:          req.Name,
+		BaseURL:       req.BaseURL,
+		AuthType:      req.AuthType,
+		OAuthProvider: req.OAuthProvider,
+		OAuthRef:      req.OAuthRef,
+		Priority:      priority,
+		Enabled:       req.Enabled,
+	}
+	applyProviderOverrides(&provider, req)
+	if err := config.ApplyProviderProxySettings(&provider, config.ProviderProxySettingsPatch{
+		Mode: req.ProxyMode,
+		URL:  req.ProxyURL,
+	}, false); err != nil {
+		return config.Provider{}, err
+	}
+	assignProviderKeys(&provider, keys)
+	config.NormalizeProviderAuthSettings(&provider)
+	if err := validateProviderCredentialSource(clientType, provider); err != nil {
+		return config.Provider{}, err
+	}
+	return provider, nil
+}
+
+func mergeProviderUpdate(current config.Provider, req ProviderRequest, keys []string) (config.Provider, error) {
+	provider := current
+	if req.Name != "" {
+		provider.Name = req.Name
+	}
+	if req.BaseURL != "" {
+		provider.BaseURL = req.BaseURL
+	}
+	if req.AuthType != "" {
+		provider.AuthType = req.AuthType
+		switch req.AuthType {
+		case config.ProviderAuthTypeAPIKey:
+			provider.OAuthProvider = ""
+			provider.OAuthRef = ""
+		case config.ProviderAuthTypeOAuth:
+			assignProviderKeys(&provider, nil)
+		}
+	}
+	if req.OAuthProvider != "" {
+		provider.OAuthProvider = req.OAuthProvider
+	}
+	if req.OAuthRef != "" {
+		provider.OAuthRef = req.OAuthRef
+	}
+	if req.APIKey != "" || len(req.APIKeys) > 0 {
+		assignProviderKeys(&provider, keys)
+	}
+	if req.Priority != nil {
+		provider.Priority = *req.Priority
+	}
+	if req.Enabled != nil {
+		provider.Enabled = req.Enabled
+	}
+	applyProviderOverrides(&provider, req)
+	if err := config.ApplyProviderProxySettings(&provider, config.ProviderProxySettingsPatch{
+		Mode: req.ProxyMode,
+		URL:  req.ProxyURL,
+	}, true); err != nil {
+		return config.Provider{}, err
+	}
+	config.NormalizeProviderAuthSettings(&provider)
+	return provider, nil
+}
+
+func validateProviderCredentialSource(clientType string, provider config.Provider) error {
+	switch provider.NormalizedAuthType() {
+	case config.ProviderAuthTypeAPIKey:
+		if _, err := validateBaseURL(provider.BaseURL); err != nil {
+			return err
+		}
+		if len(provider.NormalizedAPIKeys()) == 0 {
+			return fmt.Errorf("api_key or api_keys is required")
+		}
+		if provider.NormalizedOAuthProvider() != "" || provider.NormalizedOAuthRef() != "" {
+			return fmt.Errorf("oauth_provider and oauth_ref require auth_type=oauth")
+		}
+	case config.ProviderAuthTypeOAuth:
+		if len(provider.NormalizedAPIKeys()) > 0 {
+			return fmt.Errorf("api_key and api_keys cannot be set when auth_type=oauth")
+		}
+		if provider.NormalizedOAuthProvider() == "" {
+			return fmt.Errorf("oauth_provider is required when auth_type=oauth")
+		}
+		if provider.NormalizedOAuthRef() == "" {
+			return fmt.Errorf("oauth_ref is required when auth_type=oauth")
+		}
+		if err := validateOAuthProviderForClient(clientType, provider.NormalizedOAuthProvider()); err != nil {
+			return err
+		}
+		if strings.TrimSpace(provider.BaseURL) != "" {
+			return fmt.Errorf("base_url is not allowed when auth_type=oauth")
+		}
+	default:
+		return fmt.Errorf("auth_type must be one of %q or %q", config.ProviderAuthTypeAPIKey, config.ProviderAuthTypeOAuth)
+	}
+	return nil
+}
+
+func validateOAuthProviderForClient(clientType string, oauthProvider config.OAuthProvider) error {
+	if oauthpkg.ProviderSupportedForClient(oauthProvider, clientType) {
+		return nil
+	}
+	if canonical, ok := config.CanonicalClientType(clientType); ok {
+		clientType = canonical
+	}
+	return fmt.Errorf("oauth_provider %q is not supported for %s client", oauthProvider, clientType)
+}
+
 func assignProviderKeys(provider *config.Provider, keys []string) {
 	if provider == nil {
 		return
@@ -1125,31 +1427,17 @@ func extractClientAndProvider(path string) (string, string) {
 	return "", ""
 }
 
-func updateProviderInList(providers []config.Provider, name string, req ProviderRequest, keys []string) (bool, error) {
+func updateProviderInList(clientType string, providers []config.Provider, name string, req ProviderRequest, keys []string) (bool, error) {
 	for i := range providers {
 		if providers[i].Name == name {
-			if req.Name != "" {
-				providers[i].Name = req.Name
-			}
-			if req.BaseURL != "" {
-				providers[i].BaseURL = req.BaseURL
-			}
-			if req.APIKey != "" || len(req.APIKeys) > 0 {
-				assignProviderKeys(&providers[i], keys)
-			}
-			if req.Priority != nil {
-				providers[i].Priority = *req.Priority
-			}
-			if req.Enabled != nil {
-				providers[i].Enabled = req.Enabled
-			}
-			applyProviderOverrides(&providers[i], req)
-			if err := config.ApplyProviderProxySettings(&providers[i], config.ProviderProxySettingsPatch{
-				Mode: req.ProxyMode,
-				URL:  req.ProxyURL,
-			}, true); err != nil {
+			updated, err := mergeProviderUpdate(providers[i], req, keys)
+			if err != nil {
 				return false, err
 			}
+			if err := validateProviderCredentialSource(clientType, updated); err != nil {
+				return false, err
+			}
+			providers[i] = updated
 			return true, nil
 		}
 	}

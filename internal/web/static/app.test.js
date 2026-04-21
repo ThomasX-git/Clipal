@@ -4,15 +4,27 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function loadApp() {
+function loadApp(options = {}) {
     const source = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+    const storage = new Map(Object.entries(options.localStorageData || {}));
+    const location = {
+        href: 'http://localhost/',
+        assign(url) {
+            this.href = url;
+        }
+    };
     const context = {
         console,
         localStorage: {
-            getItem() {
-                return null;
+            getItem(key) {
+                return storage.has(key) ? storage.get(key) : null;
             },
-            setItem() {}
+            setItem(key, value) {
+                storage.set(String(key), String(value));
+            },
+            removeItem(key) {
+                storage.delete(String(key));
+            }
         },
         document: {
             documentElement: {
@@ -32,21 +44,70 @@ function loadApp() {
                     matches: false,
                     addEventListener() {}
                 };
-            }
+            },
+            open() {
+                return {};
+            },
+            location
         },
         setTimeout,
         clearTimeout,
+        setInterval() {
+            return 1;
+        },
+        clearInterval() {},
         queueMicrotask,
         URL,
         fetch: async () => ({ ok: true, json: async () => ({}) }),
         confirm: () => true
     };
 
+    if (options.context) {
+        if (options.context.localStorage) {
+            Object.assign(context.localStorage, options.context.localStorage);
+        }
+        if (options.context.document) {
+            Object.assign(context.document, options.context.document);
+            if (options.context.document.documentElement) {
+                Object.assign(context.document.documentElement, options.context.document.documentElement);
+            }
+        }
+        if (options.context.window) {
+            const windowOverrides = { ...options.context.window };
+            if (windowOverrides.location) {
+                Object.assign(context.window.location, windowOverrides.location);
+                delete windowOverrides.location;
+            }
+            Object.assign(context.window, windowOverrides);
+        }
+        Object.assign(context, {
+            ...options.context,
+            localStorage: context.localStorage,
+            document: context.document,
+            window: context.window
+        });
+    }
+
     vm.runInNewContext(`${source}\n;globalThis.__appFactory = app;`, context, {
         filename: 'app.js'
     });
 
-    return context.__appFactory();
+    const state = context.__appFactory();
+    state.__context = context;
+    if (typeof state.$nextTick !== 'function') {
+        state.$nextTick = callback => callback();
+    }
+    return state;
+}
+
+class FakeFormData {
+    constructor() {
+        this.parts = [];
+    }
+
+    append(name, value, filename) {
+        this.parts.push({ name, value, filename });
+    }
 }
 
 test('applyLocalProviderReorder reorders providers and renumbers priority immediately', () => {
@@ -100,6 +161,26 @@ test('afterProviderRender aligns Sortable DOM order to current providers on next
     assert.deepEqual(calls, [
         { order: ['p2', 'p1'], useAnimation: false }
     ]);
+});
+
+test('apiCall omits JSON content type for FormData uploads', async () => {
+    const state = loadApp({
+        context: {
+            FormData: FakeFormData,
+            fetch: async (url, options) => ({
+                ok: true,
+                json: async () => ({ url, headers: options.headers })
+            })
+        }
+    });
+
+    const result = await state.apiCall('/api/oauth/import/cli-proxy-api', {
+        method: 'POST',
+        body: new FakeFormData()
+    }, true);
+
+    assert.equal(result.headers['X-Clipal-UI'], '1');
+    assert.equal(Object.prototype.hasOwnProperty.call(result.headers, 'Content-Type'), false);
 });
 
 test('saveProvider includes OpenAI override fields in payload', async () => {
@@ -271,6 +352,7 @@ test('providerOverrideSupport centralizes support matrix', () => {
 test('openAddProviderModal sets next priority for provider form', () => {
     const state = loadApp();
     state.selectedClient = 'openai';
+    state.oauthProviders = [{ provider: 'codex' }];
     state.clientConfig.override_support = {
         model: true,
         openai: {
@@ -290,6 +372,27 @@ test('openAddProviderModal sets next priority for provider form', () => {
     assert.equal(state.showAddProviderModal, true);
     assert.equal(state.providerForm.priority, 4);
     assert.equal(state.providerForm.proxy_mode, 'default');
+    assert.equal(state.providerForm.auth_type, 'api_key');
+    assert.equal(state.providerForm.oauth_provider, 'codex');
+});
+
+test('loadOAuthProviders clears unavailable oauth source for current client', async () => {
+    const state = loadApp();
+    const calls = [];
+    state.selectedClient = 'gemini';
+    state.providerForm.auth_type = 'oauth';
+    state.providerForm.oauth_provider = 'codex';
+    state.apiCall = async url => {
+        calls.push(url);
+        return [];
+    };
+
+    await state.loadOAuthProviders(true);
+
+    assert.deepEqual(calls, ['/api/oauth/providers?client_type=gemini']);
+    assert.deepEqual(JSON.parse(JSON.stringify(state.oauthProviders)), []);
+    assert.equal(state.providerForm.auth_type, 'api_key');
+    assert.equal(state.providerForm.oauth_provider, '');
 });
 
 test('editProvider hydrates override fields directly into the form', () => {
@@ -318,6 +421,155 @@ test('editProvider hydrates override fields directly into the form', () => {
     assert.equal(state.providerForm.model, 'gpt-5.4');
     assert.equal(state.providerForm.reasoning_effort, 'high');
     assert.equal(state.providerForm.thinking_budget_tokens, 0);
+});
+
+test('editProvider rejects oauth providers', () => {
+    const state = loadApp();
+    const alerts = [];
+    state.showAlert = (...args) => alerts.push(args);
+
+    state.editProvider({
+        name: 'codex-sean-example-com',
+        auth_type: 'oauth',
+        oauth_provider: 'codex',
+        oauth_ref: 'codex-sean-example-com',
+        enabled: true
+    });
+
+    assert.equal(state.showEditProviderModal, false);
+    assert.equal(alerts.length, 1);
+});
+
+test('setProviderAuthType falls back to api_key when oauth is unavailable', () => {
+    const state = loadApp();
+    state.oauthProviders = [];
+    state.providerForm.auth_type = 'api_key';
+
+    state.setProviderAuthType('oauth');
+
+    assert.equal(state.providerForm.auth_type, 'api_key');
+});
+
+test('providerCardTitle truncates oauth display name to 12 characters', () => {
+    const state = loadApp();
+
+    const title = state.providerCardTitle({
+        auth_type: 'oauth',
+        display_name: 'gamebabies@gmail.com',
+        name: 'codex-gamebabies-gmail-com'
+    });
+
+    assert.equal(title, 'gamebabie...');
+});
+
+test('providerHasVisibleDetails keeps oauth summary visible even without usage', () => {
+    const state = loadApp();
+
+    const visible = state.providerHasVisibleDetails({
+        auth_type: 'oauth',
+        base_url: '',
+        proxy_mode: 'default',
+        usage: null
+    });
+
+    assert.equal(visible, true);
+});
+
+test('providerOAuthAuthStatusLabel prefers backend status for oauth cards', () => {
+    const state = loadApp();
+
+    const label = state.providerOAuthAuthStatusLabel({
+        auth_type: 'oauth',
+        oauth_auth_status: 'refresh_due'
+    });
+
+    assert.equal(label, 'Refresh due');
+});
+
+test('providerOAuthAuthStatus falls back to reauth-needed when no credential metadata exists', () => {
+    const state = loadApp();
+
+    const status = state.providerOAuthAuthStatus({
+        auth_type: 'oauth',
+        oauth_auth_status: '',
+        oauth_expires_at: '',
+        oauth_last_refresh: ''
+    });
+
+    assert.equal(status, 'reauth_needed');
+});
+
+test('providerOAuthRefreshSummary returns never when last refresh is unavailable', () => {
+    const state = loadApp();
+
+    const summary = state.providerOAuthRefreshSummary({
+        auth_type: 'oauth',
+        oauth_last_refresh: ''
+    });
+
+    assert.equal(summary, 'Never');
+});
+
+test('deleteProvider deletes oauth account for oauth providers', async () => {
+    const state = loadApp();
+    const calls = [];
+    state.selectedClient = 'openai';
+    state.apiCall = async (url, options) => {
+        calls.push({ url, method: options.method });
+        return {};
+    };
+    state.showAlert = () => {};
+    state.loadProviders = async () => {};
+    state.refreshStatus = async () => {};
+
+    await state.deleteProvider({
+        name: 'codex-sean-example-com',
+        display_name: 'sean@example.com',
+        auth_type: 'oauth',
+        oauth_provider: 'codex',
+        oauth_ref: 'codex-sean-example-com'
+    });
+
+    assert.deepEqual(calls, [
+        {
+            url: '/api/oauth/accounts/codex/codex-sean-example-com',
+            method: 'DELETE'
+        }
+    ]);
+});
+
+test('toggleProvider updates oauth providers through the standard provider API', async () => {
+    const state = loadApp();
+    const calls = [];
+    const alerts = [];
+    const provider = {
+        name: 'codex-sean-example-com',
+        auth_type: 'oauth',
+        oauth_provider: 'codex',
+        oauth_ref: 'codex-sean-example-com',
+        enabled: true
+    };
+    state.selectedClient = 'openai';
+    state.apiCall = async (url, options) => {
+        calls.push({ url, options: JSON.parse(options.body) });
+        return {};
+    };
+    state.showAlert = (...args) => alerts.push(args);
+    state.refreshStatus = async () => {};
+
+    await state.toggleProvider(provider, { target: { checked: false } });
+
+    assert.deepEqual(calls, [
+        {
+            url: '/api/providers/openai/codex-sean-example-com',
+            options: {
+                enabled: false
+            }
+        }
+    ]);
+    assert.equal(provider.enabled, false);
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0][0], 'success');
 });
 
 test('saveProvider includes custom proxy settings when configured', async () => {
@@ -398,6 +650,284 @@ test('saveProvider omits unsupported override fields for gemini', async () => {
         enabled: true,
         api_key: 'key-1'
     });
+});
+
+test('saveProvider starts OAuth authorization flow for oauth provider', async () => {
+    const state = loadApp();
+    const calls = [];
+    state.selectedClient = 'openai';
+    state.providerForm = {
+        auth_type: 'oauth',
+        oauth_provider: 'codex',
+        oauth_ref: '',
+        name: '',
+        base_url: '',
+        proxy_mode: 'default',
+        proxy_url: '',
+        proxy_url_hint: '',
+        model: '',
+        reasoning_effort: '',
+        thinking_budget_tokens: 0,
+        api_keys_text: '',
+        priority: 1,
+        enabled: true
+    };
+    state.apiCall = async (url, options) => {
+        calls.push({ url, options: options && options.body ? JSON.parse(options.body) : null });
+        if (url === '/api/oauth/providers/start') {
+            return {
+                session_id: 'sess-1',
+                provider: 'codex',
+                auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
+            };
+        }
+        if (url === '/api/oauth/sessions/sess-1') {
+            return {
+                status: 'completed',
+                provider: 'codex',
+                provider_name: 'codex-sean-example-com',
+                display_name: 'sean@example.com'
+            };
+        }
+        throw new Error(`unexpected apiCall ${url}`);
+    };
+    state.showAlert = () => {};
+    state.closeModals = () => {};
+    state.loadProviders = async () => {};
+    state.refreshStatus = async () => {};
+
+    await state.saveProvider();
+
+    assert.deepEqual(
+        calls.map(call => call.url),
+        ['/api/oauth/providers/start', '/api/oauth/sessions/sess-1']
+    );
+    assert.deepEqual(calls[0].options, {
+        client_type: 'openai',
+        provider: 'codex'
+    });
+});
+
+test('importCLIProxyAPIDirectory uploads files and refreshes providers after success', async () => {
+    const state = loadApp({
+        context: {
+            FormData: FakeFormData
+        }
+    });
+    const calls = [];
+    const alerts = [];
+    let closed = 0;
+    let loadProvidersCalls = 0;
+    let refreshStatusCalls = 0;
+    state.selectedClient = 'openai';
+    state.providerForm = {
+        ...state.providerForm,
+        auth_type: 'oauth',
+        oauth_provider: 'codex'
+    };
+    state.apiCall = async (url, options) => {
+        calls.push({
+            url,
+            parts: options.body.parts.map(part => ({
+                name: part.name,
+                filename: part.filename,
+                value: typeof part.value === 'object' ? part.value.name : part.value
+            }))
+        });
+        return {
+            imported_count: 1,
+            linked_count: 1,
+            skipped_count: 1,
+            failed_count: 0,
+            message: 'imported 1 account(s), created 1 provider(s), skipped 1 file(s)'
+        };
+    };
+    state.showAlert = (...args) => alerts.push(args);
+    state.closeModals = () => {
+        closed++;
+    };
+    state.loadProviders = async () => {
+        loadProvidersCalls++;
+    };
+    state.refreshStatus = async () => {
+        refreshStatusCalls++;
+    };
+
+    await state.importCLIProxyAPIDirectory([
+        { name: 'codex-a.json', webkitRelativePath: 'cli/codex-a.json' },
+        { name: 'codex-b.json', webkitRelativePath: '' }
+    ]);
+
+    assert.deepEqual(calls, [
+        {
+            url: '/api/oauth/import/cli-proxy-api',
+            parts: [
+                { name: 'client_type', filename: undefined, value: 'openai' },
+                { name: 'provider', filename: undefined, value: 'codex' },
+                { name: 'files', filename: 'cli/codex-a.json', value: 'codex-a.json' },
+                { name: 'files', filename: 'codex-b.json', value: 'codex-b.json' }
+            ]
+        }
+    ]);
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0][0], 'info');
+    assert.equal(closed, 1);
+    assert.equal(loadProvidersCalls, 1);
+    assert.equal(refreshStatusCalls, 1);
+});
+
+test('triggerOAuthImportPicker clicks the hidden input', () => {
+    const state = loadApp();
+    let clicked = 0;
+    state.$refs = {
+        oauthImportInput: {
+            value: 'stale',
+            click() {
+                clicked++;
+            }
+        }
+    };
+
+    state.triggerOAuthImportPicker();
+
+    assert.equal(state.$refs.oauthImportInput.value, '');
+    assert.equal(clicked, 1);
+});
+
+test('startOAuthProviderAuthorization stores pending session and redirects same-tab when popup is blocked', async () => {
+    const state = loadApp({
+        context: {
+            window: {
+                open() {
+                    return null;
+                }
+            }
+        }
+    });
+    const calls = [];
+    state.selectedClient = 'openai';
+    state.providerForm = {
+        ...state.providerForm,
+        auth_type: 'oauth',
+        oauth_provider: 'codex'
+    };
+    state.apiCall = async (url, options) => {
+        calls.push({ url, options: JSON.parse(options.body) });
+        return {
+            session_id: 'sess-redirect',
+            provider: 'codex',
+            auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
+        };
+    };
+
+    await state.startOAuthProviderAuthorization();
+
+    assert.deepEqual(calls, [
+        {
+            url: '/api/oauth/providers/start',
+            options: {
+                client_type: 'openai',
+                provider: 'codex'
+            }
+        }
+    ]);
+    assert.equal(
+        state.__context.window.location.href,
+        'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
+    );
+    assert.deepEqual(
+        JSON.parse(state.__context.localStorage.getItem('clipal.pendingOAuthSession')),
+        {
+            session_id: 'sess-redirect',
+            provider: 'codex',
+            client_type: 'openai',
+            started_at: JSON.parse(state.__context.localStorage.getItem('clipal.pendingOAuthSession')).started_at
+        }
+    );
+});
+
+test('resumePendingOAuthSession completes stored session and clears pending storage', async () => {
+    const state = loadApp({
+        localStorageData: {
+            'clipal.pendingOAuthSession': JSON.stringify({
+                session_id: 'sess-1',
+                provider: 'codex',
+                client_type: 'openai',
+                started_at: 1710000000000
+            })
+        }
+    });
+    const calls = [];
+    const alerts = [];
+    let loadProvidersCalls = 0;
+    let refreshStatusCalls = 0;
+    state.selectedClient = 'claude';
+    state.apiCall = async url => {
+        calls.push(url);
+        if (url === '/api/oauth/sessions/sess-1') {
+            return {
+                status: 'completed',
+                provider: 'codex',
+                provider_name: 'codex-sean-example-com',
+                display_name: 'sean@example.com'
+            };
+        }
+        throw new Error(`unexpected apiCall ${url}`);
+    };
+    state.showAlert = (...args) => alerts.push(args);
+    state.closeModals = () => {};
+    state.loadProviders = async () => {
+        loadProvidersCalls++;
+    };
+    state.refreshStatus = async () => {
+        refreshStatusCalls++;
+    };
+
+    await state.resumePendingOAuthSession();
+
+    assert.deepEqual(calls, ['/api/oauth/sessions/sess-1']);
+    assert.equal(state.selectedClient, 'openai');
+    assert.equal(loadProvidersCalls, 1);
+    assert.equal(refreshStatusCalls, 1);
+    assert.equal(state.__context.localStorage.getItem('clipal.pendingOAuthSession'), null);
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0][0], 'success');
+});
+
+test('init selects pending OAuth target client and resumes polling after initial load', async () => {
+    const state = loadApp({
+        localStorageData: {
+            'clipal.pendingOAuthSession': JSON.stringify({
+                session_id: 'sess-init',
+                provider: 'codex',
+                client_type: 'openai',
+                started_at: 1710000000000
+            })
+        }
+    });
+    const resumed = [];
+    state.refreshStatus = async () => {};
+    state.loadServiceStatus = async () => {};
+    state.loadProviders = async () => {};
+    state.loadOAuthProviders = async () => {};
+    state.loadGlobalConfig = async () => {};
+    state.loadIntegrations = async () => {};
+    state.initSortable = () => {};
+    state.resumePendingOAuthSession = async pending => {
+        resumed.push(pending);
+    };
+
+    await state.init();
+
+    assert.equal(state.selectedClient, 'openai');
+    assert.deepEqual(JSON.parse(JSON.stringify(resumed)), [
+        {
+            session_id: 'sess-init',
+            provider: 'codex',
+            client_type: 'openai',
+            started_at: 1710000000000
+        }
+    ]);
 });
 
 test('saveGlobalConfig normalizes and clears non-custom upstream proxy settings', async () => {

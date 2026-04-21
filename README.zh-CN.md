@@ -30,6 +30,7 @@
 遇到并发限制、速率限制或者余额耗尽导致生成中断？
 - **多 Key 轮询**：为单个 provider 配置多个 API Key，Clipal 会在同 provider 内自动重试并轮换 Key，直至成功。
 - **优先级自动容灾**：当主模型/服务商不可用时，基于预设优先级秒级无缝切换到备用模型，自带断路器和并发阻断机制。
+- **OAuth 上游**：可以在 Web UI 里把 Codex 授权账号作为 OpenAI `Responses` 上游接入，并继续复用同一套排序、置顶、启停与 failover 逻辑。
 
 ### 🎛️ **美观且强大的本地 Web UI**
 可视化管理你的 AI 工作流。在这里增删、停用 provider，或者在“手动模式”下置顶特定模型，亦或调整全局运行参数。所有更改**热重载**生效，无需重启服务。
@@ -122,6 +123,7 @@ clipal service start
 - **100% 本地运行**：默认仅监听 `127.0.0.1:3333`。
 - **Web UI 隔离保护**：即使代理开启了对外网段访问 (`0.0.0.0`)，Web 管理界面也严格强制仅限本机 (loopback) 访问。
 - **真 Key 替换**：你在 Clipal 中配置的上游 API Key 只存在本地，Clipal 会在代理时自动覆盖并注入到真正的请求中，你可以在客户端放心地填入任何占位符。
+- **OAuth 凭据独立存储**：OAuth 账号凭据单独保存在本机 `~/.clipal/oauth/` 下，不写入 YAML provider 文件。
 
 <div align="center">
   <img src="assets/Clipal-luffy2.jpeg" alt="Clipal" width="100%">

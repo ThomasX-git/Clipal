@@ -165,13 +165,16 @@ type ClaudeProviderOverridesResponse struct {
 
 // ProviderRequest represents a request to create or update a provider
 type ProviderRequest struct {
-	Name      string                    `json:"name"`
-	BaseURL   string                    `json:"base_url"`
-	APIKey    string                    `json:"api_key,omitempty"`
-	APIKeys   []string                  `json:"api_keys,omitempty"`
-	ProxyMode *string                   `json:"proxy_mode,omitempty"`
-	ProxyURL  *string                   `json:"proxy_url,omitempty"`
-	Overrides *ProviderOverridesRequest `json:"overrides,omitempty"`
+	Name          string                    `json:"name"`
+	BaseURL       string                    `json:"base_url"`
+	APIKey        string                    `json:"api_key,omitempty"`
+	APIKeys       []string                  `json:"api_keys,omitempty"`
+	AuthType      config.ProviderAuthType   `json:"auth_type,omitempty"`
+	OAuthProvider config.OAuthProvider      `json:"oauth_provider,omitempty"`
+	OAuthRef      string                    `json:"oauth_ref,omitempty"`
+	ProxyMode     *string                   `json:"proxy_mode,omitempty"`
+	ProxyURL      *string                   `json:"proxy_url,omitempty"`
+	Overrides     *ProviderOverridesRequest `json:"overrides,omitempty"`
 	// Priority is 1-based. Omit to keep existing value (on updates) or to
 	// auto-assign the next priority (on create).
 	Priority *int  `json:"priority,omitempty"`
@@ -180,15 +183,22 @@ type ProviderRequest struct {
 
 // ProviderResponse is returned for provider listings (never includes api_key).
 type ProviderResponse struct {
-	Name         string                     `json:"name"`
-	BaseURL      string                     `json:"base_url"`
-	ProxyMode    string                     `json:"proxy_mode"`
-	ProxyURLHint string                     `json:"proxy_url_hint,omitempty"`
-	Priority     int                        `json:"priority"`
-	Enabled      bool                       `json:"enabled"`
-	KeyCount     int                        `json:"key_count"`
-	Usage        *ProviderUsageResponse     `json:"usage,omitempty"`
-	Overrides    *ProviderOverridesResponse `json:"overrides,omitempty"`
+	Name             string                     `json:"name"`
+	DisplayName      string                     `json:"display_name,omitempty"`
+	BaseURL          string                     `json:"base_url"`
+	AuthType         config.ProviderAuthType    `json:"auth_type"`
+	OAuthProvider    config.OAuthProvider       `json:"oauth_provider,omitempty"`
+	OAuthRef         string                     `json:"oauth_ref,omitempty"`
+	OAuthAuthStatus  string                     `json:"oauth_auth_status,omitempty"`
+	OAuthExpiresAt   string                     `json:"oauth_expires_at,omitempty"`
+	OAuthLastRefresh string                     `json:"oauth_last_refresh,omitempty"`
+	ProxyMode        string                     `json:"proxy_mode"`
+	ProxyURLHint     string                     `json:"proxy_url_hint,omitempty"`
+	Priority         int                        `json:"priority"`
+	Enabled          bool                       `json:"enabled"`
+	KeyCount         int                        `json:"key_count"`
+	Usage            *ProviderUsageResponse     `json:"usage,omitempty"`
+	Overrides        *ProviderOverridesResponse `json:"overrides,omitempty"`
 }
 
 type ProviderUsageResponse struct {
@@ -222,15 +232,77 @@ type ClientConfigExport struct {
 }
 
 type ProviderExport struct {
-	Name      string                     `json:"name"`
-	BaseURL   string                     `json:"base_url"`
-	APIKey    string                     `json:"api_key,omitempty"`
-	APIKeys   []string                   `json:"api_keys,omitempty"`
-	ProxyMode string                     `json:"proxy_mode,omitempty"`
-	ProxyURL  string                     `json:"proxy_url,omitempty"`
-	Priority  int                        `json:"priority"`
-	Enabled   *bool                      `json:"enabled,omitempty"`
-	Overrides *ProviderOverridesResponse `json:"overrides,omitempty"`
+	Name          string                     `json:"name"`
+	BaseURL       string                     `json:"base_url,omitempty"`
+	APIKey        string                     `json:"api_key,omitempty"`
+	APIKeys       []string                   `json:"api_keys,omitempty"`
+	AuthType      config.ProviderAuthType    `json:"auth_type"`
+	OAuthProvider config.OAuthProvider       `json:"oauth_provider,omitempty"`
+	OAuthRef      string                     `json:"oauth_ref,omitempty"`
+	ProxyMode     string                     `json:"proxy_mode,omitempty"`
+	ProxyURL      string                     `json:"proxy_url,omitempty"`
+	Priority      int                        `json:"priority"`
+	Enabled       *bool                      `json:"enabled,omitempty"`
+	Overrides     *ProviderOverridesResponse `json:"overrides,omitempty"`
+}
+
+type OAuthStartRequest struct {
+	ClientType string               `json:"client_type"`
+	Provider   config.OAuthProvider `json:"provider"`
+}
+
+type OAuthProviderOptionResponse struct {
+	Provider config.OAuthProvider `json:"provider"`
+}
+
+type OAuthStartResponse struct {
+	SessionID string               `json:"session_id"`
+	Provider  config.OAuthProvider `json:"provider"`
+	AuthURL   string               `json:"auth_url"`
+	ExpiresAt string               `json:"expires_at,omitempty"`
+}
+
+type OAuthSessionResponse struct {
+	SessionID     string               `json:"session_id"`
+	Provider      config.OAuthProvider `json:"provider"`
+	Status        string               `json:"status"`
+	AuthURL       string               `json:"auth_url,omitempty"`
+	ExpiresAt     string               `json:"expires_at,omitempty"`
+	CredentialRef string               `json:"credential_ref,omitempty"`
+	Email         string               `json:"email,omitempty"`
+	ProviderName  string               `json:"provider_name,omitempty"`
+	DisplayName   string               `json:"display_name,omitempty"`
+	Error         string               `json:"error,omitempty"`
+}
+
+type OAuthAccountResponse struct {
+	Provider        config.OAuthProvider `json:"provider"`
+	Ref             string               `json:"ref"`
+	Email           string               `json:"email,omitempty"`
+	ExpiresAt       string               `json:"expires_at,omitempty"`
+	LastRefresh     string               `json:"last_refresh,omitempty"`
+	LinkedProviders []string             `json:"linked_providers,omitempty"`
+}
+
+type OAuthImportResponse struct {
+	ClientType    string                          `json:"client_type"`
+	Provider      config.OAuthProvider            `json:"provider"`
+	ImportedCount int                             `json:"imported_count"`
+	LinkedCount   int                             `json:"linked_count"`
+	SkippedCount  int                             `json:"skipped_count"`
+	FailedCount   int                             `json:"failed_count"`
+	Message       string                          `json:"message,omitempty"`
+	Results       []OAuthImportFileResultResponse `json:"results,omitempty"`
+}
+
+type OAuthImportFileResultResponse struct {
+	File         string               `json:"file"`
+	Status       string               `json:"status"`
+	Provider     config.OAuthProvider `json:"provider,omitempty"`
+	Ref          string               `json:"ref,omitempty"`
+	Email        string               `json:"email,omitempty"`
+	ProviderName string               `json:"provider_name,omitempty"`
+	Message      string               `json:"message,omitempty"`
 }
 
 // StatusResponse represents the system status
@@ -432,15 +504,18 @@ func toProviderResponses(providers []config.Provider, usageByProvider map[string
 	out := make([]ProviderResponse, 0, len(providers))
 	for _, p := range providers {
 		out = append(out, ProviderResponse{
-			Name:         p.Name,
-			BaseURL:      p.BaseURL,
-			ProxyMode:    string(p.NormalizedProxyMode()),
-			ProxyURLHint: proxyURLHint(p.NormalizedProxyURL()),
-			Priority:     p.Priority,
-			Enabled:      p.IsEnabled(),
-			KeyCount:     p.KeyCount(),
-			Usage:        mapProviderUsageResponse(usageByProvider[p.Name]),
-			Overrides:    mapProviderOverridesResponse(p),
+			Name:          p.Name,
+			BaseURL:       p.BaseURL,
+			AuthType:      p.NormalizedAuthType(),
+			OAuthProvider: p.NormalizedOAuthProvider(),
+			OAuthRef:      p.NormalizedOAuthRef(),
+			ProxyMode:     string(p.NormalizedProxyMode()),
+			ProxyURLHint:  proxyURLHint(p.NormalizedProxyURL()),
+			Priority:      p.Priority,
+			Enabled:       p.IsEnabled(),
+			KeyCount:      p.KeyCount(),
+			Usage:         mapProviderUsageResponse(usageByProvider[p.Name]),
+			Overrides:     mapProviderOverridesResponse(p),
 		})
 	}
 	return out
@@ -472,17 +547,23 @@ func mapProviderUsageResponse(usage telemetry.ProviderUsage) *ProviderUsageRespo
 func toClientConfigExport(cc config.ClientConfig) ClientConfigExport {
 	out := make([]ProviderExport, 0, len(cc.Providers))
 	for _, p := range cc.Providers {
-		out = append(out, ProviderExport{
-			Name:      p.Name,
-			BaseURL:   p.BaseURL,
-			APIKey:    p.APIKey,
-			APIKeys:   append([]string(nil), p.APIKeys...),
-			ProxyMode: string(p.NormalizedProxyMode()),
-			ProxyURL:  p.NormalizedProxyURL(),
-			Priority:  p.Priority,
-			Enabled:   p.Enabled,
-			Overrides: mapProviderOverridesResponse(p),
-		})
+		export := ProviderExport{
+			Name:          p.Name,
+			BaseURL:       p.BaseURL,
+			AuthType:      p.NormalizedAuthType(),
+			OAuthProvider: p.NormalizedOAuthProvider(),
+			OAuthRef:      p.NormalizedOAuthRef(),
+			ProxyMode:     string(p.NormalizedProxyMode()),
+			ProxyURL:      p.NormalizedProxyURL(),
+			Priority:      p.Priority,
+			Enabled:       p.Enabled,
+			Overrides:     mapProviderOverridesResponse(p),
+		}
+		if !p.UsesOAuth() {
+			export.APIKey = p.APIKey
+			export.APIKeys = append([]string(nil), p.APIKeys...)
+		}
+		out = append(out, export)
 	}
 	return ClientConfigExport{
 		Mode:           string(cc.Mode),

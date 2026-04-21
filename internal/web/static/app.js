@@ -1,3 +1,5 @@
+const pendingOAuthSessionStorageKey = 'clipal.pendingOAuthSession'
+
 function app() {
     return {
         // State
@@ -8,6 +10,10 @@ function app() {
         activeTab: 'providers',
         servicePoll: null,
         selectedClient: 'claude',
+        oauthProviders: [],
+        pendingOAuthSession: null,
+        oauthPollingSessionId: '',
+        oauthPollingPromise: null,
         integrations: [],
         integrationBusyProduct: '',
         serviceBusyAction: '',
@@ -67,9 +73,17 @@ function app() {
                     pinBadge: 'Pinned',
                     baseUrl: 'Base URL',
                     proxy: 'Proxy',
+                    service: 'Service',
+                    oauthAuth: 'Auth',
+                    refresh: 'Refresh',
                     apiKeys: 'API Keys',
                     usageTotal: 'Usage',
                     usageInOut: 'Input / Output',
+                    oauthStatusReady: 'Ready',
+                    oauthStatusRefreshDue: 'Refresh due',
+                    oauthStatusReauthNeeded: 'Reauth needed',
+                    justNow: 'Just now',
+                    never: 'Never',
                     model: 'Model Override',
                     reasoningEffort: 'Reasoning Effort',
                     thinkingBudgetTokens: 'Thinking Budget Tokens',
@@ -105,7 +119,23 @@ function app() {
                     deleteConfirm: 'Are you sure you want to delete provider "{name}"?',
                     deletedTitle: 'Deleted provider {name}',
                     deletedMessage: 'It has been removed from {client}\'s provider list.',
+                    oauthDeleteConfirm: 'Delete OAuth account "{name}"? This removes all linked providers and the local credential.',
+                    oauthDeletedTitle: 'Deleted OAuth account {name}',
+                    oauthDeletedMessage: 'All linked providers were removed from {client}.',
                     clientTypeLabel: 'Client Type',
+                    authType: 'Auth',
+                    oauthAccount: 'OAuth Account',
+                    oauthAuthorizingTitle: 'Authorize {provider}',
+                    oauthAuthorizingMessage: 'Finish the OAuth flow in the opened window. Clipal will add the provider automatically after authorization.',
+                    oauthAddedTitle: '{provider} authorized',
+                    oauthAddedMessage: '{email} is now available for {client}.',
+                    oauthEditLocked: 'OAuth accounts are managed by authorization. Reauthorize or delete the account instead.',
+                    oauthToggleLocked: 'Use the provider toggle to enable or disable OAuth accounts.',
+                    oauthUnavailable: 'OAuth is not available for this client yet.',
+                    oauthImportCompletedTitle: 'Imported OAuth accounts',
+                    oauthImportFailedTitle: 'OAuth import failed',
+                    oauthImportSummary: 'Imported {imported} account(s), created {linked} provider(s), skipped {skipped} file(s), failed {failed} file(s).',
+                    oauthImportBrowserUnsupported: 'Directory import is not supported in this browser.',
                     proxyDirect: 'Direct',
                     proxyCustom: 'Custom'
                 },
@@ -114,6 +144,14 @@ function app() {
                         addTitle: 'Add Provider',
                         editTitle: 'Edit Provider',
                         close: 'Close modal',
+                        credentialSource: 'Credential Source',
+                        credentialSourceApiKey: 'API Key',
+                        credentialSourceOAuth: 'OAuth',
+                        oauthProvider: 'Service',
+                        oauthProviderCodex: 'Codex',
+                        oauthDirectHint: 'After authorization, Clipal will create the provider automatically using the authorized email.',
+                        importDirectory: 'Import OAuth Directory',
+                        importDirectoryHint: 'Select a directory of existing OAuth JSON files. Clipal will import supported accounts and create providers automatically.',
                         name: 'Name *',
                         nameHint: 'Letters, numbers, dot (.), underscore (_), and hyphen (-).',
                         baseUrl: 'Base URL *',
@@ -144,7 +182,8 @@ function app() {
                         overridesOptional: 'Optional',
                         priority: 'Priority',
                         priorityHint: 'Smaller numbers are tried first.',
-                        saveProvider: 'Save Provider'
+                        saveProvider: 'Save Provider',
+                        authorizeProvider: 'Continue to Authorization'
                     }
                 },
                 settings: {
@@ -376,9 +415,17 @@ function app() {
                     pinBadge: '已固定',
                     baseUrl: 'Base URL',
                     proxy: '代理',
+                    service: '服务',
+                    oauthAuth: '授权',
+                    refresh: '刷新',
                     apiKeys: 'API Keys',
                     usageTotal: '用量',
                     usageInOut: '输入 / 输出',
+                    oauthStatusReady: '可用',
+                    oauthStatusRefreshDue: '待刷新',
+                    oauthStatusReauthNeeded: '需重新授权',
+                    justNow: '刚刚',
+                    never: '从未',
                     model: '模型覆盖',
                     reasoningEffort: '思考强度',
                     thinkingBudgetTokens: '思考预算 Tokens',
@@ -413,7 +460,23 @@ function app() {
                     deleteConfirm: '确认删除 Provider “{name}” 吗？',
                     deletedTitle: '已删除 Provider {name}',
                     deletedMessage: '它已从 {client} 的 Provider 列表中移除。',
+                    oauthDeleteConfirm: '确认删除 OAuth 账号“{name}”吗？这会删除所有关联的 Provider 和本地凭据。',
+                    oauthDeletedTitle: '已删除 OAuth 账号 {name}',
+                    oauthDeletedMessage: '所有关联的 Provider 都已从 {client} 中移除。',
                     clientTypeLabel: '客户端类型',
+                    authType: '认证方式',
+                    oauthAccount: 'OAuth 账号',
+                    oauthAuthorizingTitle: '授权 {provider}',
+                    oauthAuthorizingMessage: '请在新打开的窗口完成 OAuth 授权。授权完成后，Clipal 会自动创建这个 Provider。',
+                    oauthAddedTitle: '{provider} 已授权',
+                    oauthAddedMessage: '{email} 现在已经可供 {client} 使用。',
+                    oauthEditLocked: 'OAuth 账号由授权流程管理。请重新授权或删除账号。',
+                    oauthToggleLocked: '可通过 Provider 开关启用或禁用 OAuth 账号。',
+                    oauthUnavailable: '这个客户端暂时还不能使用 OAuth。',
+                    oauthImportCompletedTitle: '已导入 OAuth 账号',
+                    oauthImportFailedTitle: 'OAuth 导入失败',
+                    oauthImportSummary: '已导入 {imported} 个账号，创建 {linked} 个 Provider，跳过 {skipped} 个文件，失败 {failed} 个文件。',
+                    oauthImportBrowserUnsupported: '当前浏览器不支持目录导入。',
                     dragToReorder: '拖拽调整优先级',
                     proxyDirect: '直连',
                     proxyCustom: '自定义'
@@ -423,6 +486,14 @@ function app() {
                         addTitle: '添加 Provider',
                         editTitle: '编辑 Provider',
                         close: '关闭弹窗',
+                        credentialSource: '凭证来源',
+                        credentialSourceApiKey: 'API Key',
+                        credentialSourceOAuth: 'OAuth',
+                        oauthProvider: '服务',
+                        oauthProviderCodex: 'Codex',
+                        oauthDirectHint: '授权完成后，Clipal 会使用授权邮箱自动创建 Provider。',
+                        importDirectory: '导入 OAuth 目录',
+                        importDirectoryHint: '选择已有 OAuth JSON 文件所在目录。Clipal 会导入支持的账号并自动创建 Provider。',
                         name: '名称 *',
                         nameHint: '允许字母、数字、点号 (.)、下划线 (_) 和连字符 (-)。',
                         baseUrl: 'Base URL *',
@@ -452,7 +523,8 @@ function app() {
                         overridesOptional: '可选',
                         priority: '优先级',
                         priorityHint: '数字越小越先尝试。',
-                        saveProvider: '保存 Provider'
+                        saveProvider: '保存 Provider',
+                        authorizeProvider: '继续授权'
                     }
                 },
                 settings: {
@@ -710,6 +782,9 @@ function app() {
         showAddProviderModal: false,
         showEditProviderModal: false,
         providerForm: {
+            auth_type: 'api_key',
+            oauth_provider: 'codex',
+            oauth_ref: '',
             name: '',
             base_url: '',
             proxy_mode: 'default',
@@ -829,10 +904,204 @@ function app() {
             this.focusLocaleButton(locale);
         },
 
+        isSupportedClientType(clientType) {
+            return this.clientOptions.some(option => option && option.value === clientType);
+        },
+
+        normalizePendingOAuthSession(session) {
+            if (!session || typeof session !== 'object') {
+                return null;
+            }
+
+            const sessionId = String(session.session_id || '').trim();
+            const provider = String(session.provider || '').trim().toLowerCase();
+            const clientType = String(session.client_type || '').trim().toLowerCase();
+            const startedAtValue = Number(session.started_at || 0);
+
+            if (!sessionId || !provider || !this.isSupportedClientType(clientType)) {
+                return null;
+            }
+
+            return {
+                session_id: sessionId,
+                provider,
+                client_type: clientType,
+                started_at: Number.isFinite(startedAtValue) && startedAtValue > 0 ? startedAtValue : Date.now()
+            };
+        },
+
+        loadPendingOAuthSession() {
+            if (typeof localStorage === 'undefined' || !localStorage || typeof localStorage.getItem !== 'function') {
+                this.pendingOAuthSession = null;
+                return null;
+            }
+
+            let raw = null;
+            try {
+                raw = localStorage.getItem(pendingOAuthSessionStorageKey);
+            } catch (error) {
+                this.pendingOAuthSession = null;
+                return null;
+            }
+
+            if (!raw) {
+                this.pendingOAuthSession = null;
+                return null;
+            }
+
+            try {
+                const pending = this.normalizePendingOAuthSession(JSON.parse(raw));
+                if (!pending) {
+                    this.clearPendingOAuthSession();
+                    return null;
+                }
+                this.pendingOAuthSession = pending;
+                return pending;
+            } catch (error) {
+                this.clearPendingOAuthSession();
+                return null;
+            }
+        },
+
+        savePendingOAuthSession(session) {
+            const pending = this.normalizePendingOAuthSession(session);
+            if (!pending) {
+                this.clearPendingOAuthSession();
+                return null;
+            }
+
+            this.pendingOAuthSession = pending;
+            if (typeof localStorage !== 'undefined' && localStorage && typeof localStorage.setItem === 'function') {
+                try {
+                    localStorage.setItem(pendingOAuthSessionStorageKey, JSON.stringify(pending));
+                } catch (error) {
+                    console.error('Failed to persist pending OAuth session:', error);
+                }
+            }
+            return pending;
+        },
+
+        clearPendingOAuthSession() {
+            this.pendingOAuthSession = null;
+            if (typeof localStorage !== 'undefined' && localStorage && typeof localStorage.removeItem === 'function') {
+                try {
+                    localStorage.removeItem(pendingOAuthSessionStorageKey);
+                } catch (error) {
+                    console.error('Failed to clear pending OAuth session:', error);
+                }
+            }
+        },
+
+        async handleCompletedOAuthSession(pending, session) {
+            const targetClient = String((pending && pending.client_type) || this.selectedClient || '').trim().toLowerCase();
+            if (this.isSupportedClientType(targetClient)) {
+                this.selectedClient = targetClient;
+            }
+
+            const displayName = String(session.display_name || session.email || session.provider_name || '').trim();
+            this.showAlert(
+                'success',
+                this.tf('providers.oauthAddedMessage', {
+                    client: this.providerToastClientLabel(),
+                    email: displayName
+                }),
+                this.tf('providers.oauthAddedTitle', {
+                    provider: this.oauthProviderLabel(session.provider || (pending && pending.provider))
+                })
+            );
+
+            this.closeModals();
+            await this.loadProviders();
+            await this.refreshStatus();
+        },
+
+        defaultOAuthProviderValue() {
+            return (this.oauthProviders[0] && this.oauthProviders[0].provider) || '';
+        },
+
+        hasOAuthProviders() {
+            return Array.isArray(this.oauthProviders) && this.oauthProviders.length > 0;
+        },
+
+        syncProviderFormOAuthAvailability() {
+            if (this.showEditProviderModal) {
+                return;
+            }
+            if (!this.hasOAuthProviders()) {
+                if (this.providerFormUsesOAuth()) {
+                    this.providerForm.auth_type = 'api_key';
+                }
+                this.providerForm.oauth_provider = '';
+                return;
+            }
+
+            const current = String(this.providerForm.oauth_provider || '').trim().toLowerCase();
+            if (!this.oauthProviders.some(item => String((item && item.provider) || '').trim().toLowerCase() === current)) {
+                this.providerForm.oauth_provider = this.defaultOAuthProviderValue();
+            }
+        },
+
+        async loadOAuthProviders(background = false) {
+            try {
+                const items = await this.apiCall(
+                    `/api/oauth/providers?client_type=${encodeURIComponent(this.selectedClient)}`,
+                    {},
+                    background,
+                    true
+                );
+                this.oauthProviders = Array.isArray(items) ? items : [];
+            } catch (error) {
+                console.error('Failed to load oauth providers:', error);
+                this.oauthProviders = [];
+            }
+            this.syncProviderFormOAuthAvailability();
+        },
+
+        async resumePendingOAuthSession(pendingSession = null, options = {}) {
+            const pending = pendingSession ? this.savePendingOAuthSession(pendingSession) : this.loadPendingOAuthSession();
+            if (!pending) {
+                return null;
+            }
+
+            if (this.oauthPollingPromise && this.oauthPollingSessionId === pending.session_id) {
+                return this.oauthPollingPromise;
+            }
+
+            const showError = options.showError !== false;
+            this.oauthPollingSessionId = pending.session_id;
+            this.oauthPollingPromise = (async () => {
+                try {
+                    const session = await this.pollOAuthSession(pending.session_id);
+                    const status = String((session && session.status) || '').trim().toLowerCase();
+                    if (status !== 'completed') {
+                        throw new Error((session && session.error) || 'OAuth authorization did not complete');
+                    }
+
+                    this.clearPendingOAuthSession();
+                    await this.handleCompletedOAuthSession(pending, session);
+                    return session;
+                } catch (error) {
+                    this.clearPendingOAuthSession();
+                    if (showError && error && error.message) {
+                        this.showAlert('error', error.message);
+                    }
+                    throw error;
+                } finally {
+                    this.oauthPollingSessionId = '';
+                    this.oauthPollingPromise = null;
+                }
+            })();
+            return this.oauthPollingPromise;
+        },
+
         // Initialization
         async init() {
             this.initLocale();
             this.initTheme();
+            const pendingOAuthSession = this.loadPendingOAuthSession();
+            if (pendingOAuthSession && this.isSupportedClientType(pendingOAuthSession.client_type)) {
+                this.selectedClient = pendingOAuthSession.client_type;
+            }
 
             // Initial data load
             this.isLoading = true;
@@ -841,6 +1110,7 @@ function app() {
                     this.refreshStatus(),
                     this.loadServiceStatus(),
                     this.loadProviders(),
+                    this.loadOAuthProviders(true),
                     this.loadGlobalConfig(),
                     this.loadIntegrations(true)
                 ]);
@@ -849,6 +1119,12 @@ function app() {
                 });
             } finally {
                 this.isLoading = false;
+            }
+
+            if (pendingOAuthSession) {
+                this.resumePendingOAuthSession(pendingOAuthSession).catch(error => {
+                    console.error('Failed to resume pending OAuth session:', error);
+                });
             }
 
             // Simple poller: 3s refresh while on Services/Status tabs.
@@ -997,14 +1273,21 @@ function app() {
             try {
                 // Minimum loading time to prevent flickering for fast requests
                 const start = Date.now();
+                const headers = {
+                    'X-Clipal-UI': '1',
+                    ...options.headers
+                };
+                const bodyIsFormData = typeof FormData !== 'undefined'
+                    && options
+                    && options.body instanceof FormData;
+                const hasContentTypeHeader = Object.keys(headers).some(key => String(key).toLowerCase() === 'content-type');
+                if (!bodyIsFormData && !hasContentTypeHeader) {
+                    headers['Content-Type'] = 'application/json';
+                }
 
                 const response = await fetch(url, {
                     ...options,
-                    headers: {
-                        'X-Clipal-UI': '1',
-                        'Content-Type': 'application/json',
-                        ...options.headers
-                    }
+                    headers
                 });
 
                 if (!response.ok) {
@@ -1461,6 +1744,51 @@ function app() {
             return Number.isFinite(count) ? count.toLocaleString(this.locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '0';
         },
 
+        parseTimestamp(value) {
+            const text = String(value || '').trim();
+            if (!text) {
+                return null;
+            }
+            const parsed = new Date(text);
+            return Number.isNaN(parsed.getTime()) ? null : parsed;
+        },
+
+        formatRelativeTime(value, emptyLabel) {
+            const parsed = value instanceof Date ? value : this.parseTimestamp(value);
+            if (!parsed) {
+                return emptyLabel || this.t('providers.never');
+            }
+
+            const diffMs = parsed.getTime() - Date.now();
+            const absMs = Math.abs(diffMs);
+            if (absMs < 60 * 1000) {
+                return this.t('providers.justNow');
+            }
+
+            const units = [
+                ['year', 365 * 24 * 60 * 60 * 1000],
+                ['month', 30 * 24 * 60 * 60 * 1000],
+                ['day', 24 * 60 * 60 * 1000],
+                ['hour', 60 * 60 * 1000],
+                ['minute', 60 * 1000]
+            ];
+            for (const [unit, unitMs] of units) {
+                if (absMs >= unitMs || unit === 'minute') {
+                    const delta = Math.round(diffMs / unitMs);
+                    if (typeof Intl !== 'undefined' && typeof Intl.RelativeTimeFormat === 'function') {
+                        const locale = this.locale === 'zh-CN' ? 'zh-CN' : 'en';
+                        return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(delta, unit);
+                    }
+
+                    const absDelta = Math.abs(delta);
+                    const suffix = delta < 0 ? 'ago' : 'from now';
+                    return `${absDelta} ${unit}${absDelta === 1 ? '' : 's'} ${suffix}`;
+                }
+            }
+
+            return this.t('providers.justNow');
+        },
+
         providerUsageTotal(provider) {
             const usage = provider && provider.usage;
             if (!usage || !usage.has_usage) {
@@ -1504,6 +1832,13 @@ function app() {
             return isPinned ? this.t('providers.pinnedProvider') : this.t('providers.pinTitle');
         },
 
+        providerEditTitle(provider) {
+            if (this.providerUsesOAuth(provider)) {
+                return this.t('providers.oauthEditLocked');
+            }
+            return this.t('providers.edit');
+        },
+
         providerEditKeyHint() {
             const count = Number(this.editingProviderKeyCount || 0);
             if (this.locale === 'zh-CN') {
@@ -1525,6 +1860,146 @@ function app() {
             return value || 'default';
         },
 
+        providerUsesOAuth(provider) {
+            return String((provider && provider.auth_type) || '').trim().toLowerCase() === 'oauth';
+        },
+
+        providerFormUsesOAuth() {
+            return String(this.providerForm.auth_type || '').trim().toLowerCase() === 'oauth';
+        },
+
+        setProviderAuthType(authType) {
+            const next = String(authType || '').trim().toLowerCase();
+            if (next === 'oauth' && !this.hasOAuthProviders()) {
+                this.providerForm.auth_type = 'api_key';
+                return;
+            }
+            this.providerForm.auth_type = next === 'oauth' ? 'oauth' : 'api_key';
+        },
+
+        providerDisplayName(provider) {
+            const displayName = String((provider && provider.display_name) || '').trim();
+            if (displayName) {
+                return displayName;
+            }
+            return String((provider && provider.name) || '').trim();
+        },
+
+        providerCardTitle(provider) {
+            const displayName = this.providerDisplayName(provider);
+            if (!this.providerUsesOAuth(provider)) {
+                return displayName;
+            }
+            return this.truncateLabel(displayName, 15);
+        },
+
+        truncateLabel(value, maxChars = 15) {
+            const text = String(value || '').trim();
+            const limit = Number(maxChars);
+            if (!text || !Number.isFinite(limit) || limit < 1) {
+                return text;
+            }
+            const chars = Array.from(text);
+            if (chars.length <= limit) {
+                return text;
+            }
+            if (limit <= 3) {
+                return chars.slice(0, limit).join('');
+            }
+            return chars.slice(0, limit - 3).join('') + '...';
+        },
+
+        normalizeOAuthAuthStatus(status) {
+            switch (String(status || '').trim().toLowerCase()) {
+                case 'ready':
+                case 'refresh_due':
+                case 'reauth_needed':
+                    return String(status || '').trim().toLowerCase();
+                default:
+                    return '';
+            }
+        },
+
+        providerOAuthAuthStatus(provider) {
+            if (!this.providerUsesOAuth(provider)) {
+                return '';
+            }
+
+            const explicit = this.normalizeOAuthAuthStatus(provider && provider.oauth_auth_status);
+            if (explicit) {
+                return explicit;
+            }
+
+            const expiresAt = this.parseTimestamp(provider && provider.oauth_expires_at);
+            if (expiresAt && expiresAt.getTime() <= Date.now()) {
+                return 'refresh_due';
+            }
+
+            if (this.parseTimestamp(provider && provider.oauth_last_refresh)) {
+                return 'ready';
+            }
+
+            return 'reauth_needed';
+        },
+
+        providerOAuthAuthStatusLabel(provider) {
+            switch (this.providerOAuthAuthStatus(provider)) {
+                case 'ready':
+                    return this.t('providers.oauthStatusReady');
+                case 'refresh_due':
+                    return this.t('providers.oauthStatusRefreshDue');
+                case 'reauth_needed':
+                default:
+                    return this.t('providers.oauthStatusReauthNeeded');
+            }
+        },
+
+        providerOAuthAuthStatusClass(provider) {
+            switch (this.providerOAuthAuthStatus(provider)) {
+                case 'ready':
+                    return 'pill--success';
+                case 'refresh_due':
+                    return 'pill--warning';
+                case 'reauth_needed':
+                default:
+                    return 'pill--danger';
+            }
+        },
+
+        providerOAuthRefreshSummary(provider) {
+            if (!this.providerUsesOAuth(provider)) {
+                return '';
+            }
+            return this.formatRelativeTime(provider && provider.oauth_last_refresh, this.t('providers.never'));
+        },
+
+        oauthProviderLabel(provider) {
+            switch (String(provider || '').trim().toLowerCase()) {
+                case 'codex':
+                    return this.t('modal.provider.oauthProviderCodex');
+                case 'gemini':
+                    return 'Gemini';
+                case 'claude':
+                    return 'Claude Code';
+                default:
+                    return String(provider || '').trim();
+            }
+        },
+
+        providerAuthSummary(provider) {
+            if (this.providerUsesOAuth(provider)) {
+                return `${this.t('modal.provider.credentialSourceOAuth')} / ${this.oauthProviderLabel(provider && provider.oauth_provider)}`;
+            }
+            return this.t('modal.provider.credentialSourceApiKey');
+        },
+
+        providerModalSaveLabel() {
+            if (!this.showEditProviderModal && this.providerFormUsesOAuth()) {
+                return this.t('modal.provider.authorizeProvider');
+            }
+            return this.t('modal.provider.saveProvider');
+        },
+
         providerProxySummary(provider) {
             const mode = this.normalizeProviderProxyMode(provider && provider.proxy_mode);
             if (mode === 'direct') {
@@ -1537,6 +2012,19 @@ function app() {
                 return mode;
             }
             return '';
+        },
+
+        providerHasVisibleDetails(provider) {
+            if (this.providerUsesOAuth(provider)) {
+                return true;
+            }
+            if (provider && provider.base_url) {
+                return true;
+            }
+            if (this.normalizeProviderProxyMode(provider && provider.proxy_mode) !== 'default') {
+                return true;
+            }
+            return !!(provider && provider.usage && provider.usage.has_usage);
         },
 
         providerFormUsesCustomProxy() {
@@ -1819,7 +2307,10 @@ function app() {
                 return;
             }
             this.selectedClient = clientType;
-            await this.loadProviders();
+            await Promise.all([
+                this.loadProviders(),
+                this.loadOAuthProviders(true)
+            ]);
             this.$nextTick(() => {
                 this.initSortable();
             });
@@ -1953,13 +2444,27 @@ function app() {
 
         async saveProvider() {
             try {
+                if (!this.showEditProviderModal && this.providerFormUsesOAuth()) {
+                    await this.startOAuthProviderAuthorization();
+                    return;
+                }
+
                 const payload = {
-                    name: this.providerForm.name,
-                    base_url: this.providerForm.base_url,
                     proxy_mode: this.normalizeProviderProxyMode(this.providerForm.proxy_mode),
                     priority: this.providerForm.priority,
                     enabled: this.providerForm.enabled
                 };
+                if (this.providerFormUsesOAuth()) {
+                    payload.auth_type = 'oauth';
+                    payload.oauth_provider = this.providerForm.oauth_provider;
+                    payload.oauth_ref = this.providerForm.oauth_ref;
+                    if (this.providerForm.name) {
+                        payload.name = this.providerForm.name;
+                    }
+                } else {
+                    payload.name = this.providerForm.name;
+                    payload.base_url = this.providerForm.base_url;
+                }
                 if (payload.proxy_mode === 'custom') {
                     const proxyURL = String(this.providerForm.proxy_url || '').trim();
                     if (proxyURL) {
@@ -1983,14 +2488,16 @@ function app() {
                 if (Object.keys(overrides).length > 0) {
                     payload.overrides = overrides;
                 }
-                const keys = String(this.providerForm.api_keys_text || '')
-                    .split('\n')
-                    .map(v => v.trim())
-                    .filter(Boolean);
-                if (keys.length === 1) {
-                    payload.api_key = keys[0];
-                } else if (keys.length > 1) {
-                    payload.api_keys = keys;
+                if (!this.providerFormUsesOAuth()) {
+                    const keys = String(this.providerForm.api_keys_text || '')
+                        .split('\n')
+                        .map(v => v.trim())
+                        .filter(Boolean);
+                    if (keys.length === 1) {
+                        payload.api_key = keys[0];
+                    } else if (keys.length > 1) {
+                        payload.api_keys = keys;
+                    }
                 }
                 if (this.showEditProviderModal) {
                     // Update existing provider
@@ -2030,8 +2537,154 @@ function app() {
             }
         },
 
+        async startOAuthProviderAuthorization() {
+            const provider = String(this.providerForm.oauth_provider || '').trim().toLowerCase();
+            if (!provider) {
+                throw new Error(this.t('providers.oauthUnavailable'));
+            }
+            const started = await this.apiCall('/api/oauth/providers/start', {
+                method: 'POST',
+                body: JSON.stringify({
+                    client_type: this.selectedClient,
+                    provider
+                })
+            });
+            const pending = this.savePendingOAuthSession({
+                session_id: started.session_id,
+                provider,
+                client_type: this.selectedClient,
+                started_at: Date.now()
+            });
+
+            let popupOpened = false;
+            if (typeof window !== 'undefined' && typeof window.open === 'function') {
+                const popup = window.open(started.auth_url, '_blank', 'noopener,noreferrer');
+                popupOpened = !!popup;
+                if (!popupOpened && window.location && typeof window.location.assign === 'function') {
+                    window.location.assign(started.auth_url);
+                    return null;
+                }
+            } else if (typeof window !== 'undefined' && window.location && typeof window.location.assign === 'function') {
+                window.location.assign(started.auth_url);
+                return null;
+            }
+
+            this.showAlert(
+                'info',
+                this.t('providers.oauthAuthorizingMessage'),
+                this.tf('providers.oauthAuthorizingTitle', { provider: this.oauthProviderLabel(provider) })
+            );
+
+            if (!popupOpened) {
+                return null;
+            }
+
+            return this.resumePendingOAuthSession(pending || {
+                session_id: started.session_id,
+                provider,
+                client_type: this.selectedClient
+            });
+        },
+
+        triggerOAuthImportPicker() {
+            const input = this.$refs && this.$refs.oauthImportInput;
+            if (!input || typeof input.click !== 'function') {
+                this.showAlert('error', this.t('providers.oauthImportBrowserUnsupported'));
+                return;
+            }
+            input.value = '';
+            input.click();
+        },
+
+        async handleOAuthImportSelection(event) {
+            const input = event && event.target ? event.target : null;
+            const files = Array.from((input && input.files) || []);
+            try {
+                await this.importCLIProxyAPIDirectory(files);
+            } finally {
+                if (input) {
+                    input.value = '';
+                }
+            }
+        },
+
+        async importCLIProxyAPIDirectory(files) {
+            const provider = String(this.providerForm.oauth_provider || '').trim().toLowerCase();
+            if (!provider) {
+                throw new Error(this.t('providers.oauthUnavailable'));
+            }
+            if (!Array.isArray(files) || files.length === 0) {
+                return null;
+            }
+            if (typeof FormData === 'undefined') {
+                throw new Error(this.t('providers.oauthImportBrowserUnsupported'));
+            }
+
+            const formData = new FormData();
+            formData.append('client_type', this.selectedClient);
+            formData.append('provider', provider);
+            for (const file of files) {
+                if (!file) {
+                    continue;
+                }
+                const filename = String(file.webkitRelativePath || file.name || 'credential.json').trim() || 'credential.json';
+                formData.append('files', file, filename);
+            }
+
+            const result = await this.apiCall('/api/oauth/import/cli-proxy-api', {
+                method: 'POST',
+                body: formData
+            });
+            const imported = Number(result.imported_count || 0);
+            const linked = Number(result.linked_count || 0);
+            const skipped = Number(result.skipped_count || 0);
+            const failed = Number(result.failed_count || 0);
+            let alertType = 'success';
+            let titleKey = 'providers.oauthImportCompletedTitle';
+            if (imported === 0 && failed > 0) {
+                alertType = 'error';
+                titleKey = 'providers.oauthImportFailedTitle';
+            } else if (failed > 0 || skipped > 0) {
+                alertType = 'info';
+            }
+            const message = this.tf('providers.oauthImportSummary', { imported, linked, skipped, failed })
+                || String(result.message || '').trim();
+            this.showAlert(alertType, message, this.t(titleKey));
+
+            if (imported > 0) {
+                this.closeModals();
+                await this.loadProviders();
+                await this.refreshStatus();
+            }
+            return result;
+        },
+
+        async pollOAuthSession(sessionId) {
+            const id = String(sessionId || '').trim();
+            if (!id) {
+                throw new Error('Missing OAuth session ID');
+            }
+            const deadline = Date.now() + 5 * 60 * 1000;
+            while (Date.now() < deadline) {
+                const session = await this.apiCall(`/api/oauth/sessions/${encodeURIComponent(id)}`, {}, true, true);
+                const status = String((session && session.status) || '').trim().toLowerCase();
+                if (status === 'completed' || status === 'error' || status === 'expired') {
+                    return session;
+                }
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            throw new Error('OAuth authorization timed out');
+        },
+
         editProvider(provider) {
+            if (this.providerUsesOAuth(provider)) {
+                this.showAlert('error', this.t('providers.oauthEditLocked'));
+                return;
+            }
             this.providerForm = {
+                auth_type: String(provider.auth_type || 'api_key').trim().toLowerCase() || 'api_key',
+                oauth_provider: String(provider.oauth_provider || 'codex').trim().toLowerCase() || 'codex',
+                oauth_ref: String(provider.oauth_ref || ''),
                 name: provider.name,
                 base_url: provider.base_url,
                 proxy_mode: this.normalizeProviderProxyMode(provider.proxy_mode),
@@ -2049,20 +2702,35 @@ function app() {
             this.showEditProviderModal = true;
         },
 
-        async deleteProvider(name) {
-            if (!confirm(this.tf('providers.deleteConfirm', { name }))) {
+        async deleteProvider(provider) {
+            const item = provider || {};
+            const name = String(item.name || '').trim();
+            if (!name) {
+                return;
+            }
+            const displayName = this.providerDisplayName(item) || name;
+            const usesOAuth = this.providerUsesOAuth(item);
+            const confirmKey = usesOAuth ? 'providers.oauthDeleteConfirm' : 'providers.deleteConfirm';
+            if (!confirm(this.tf(confirmKey, { name: displayName }))) {
                 return;
             }
 
             try {
-                await this.apiCall(
-                    `/api/providers/${this.selectedClient}/${encodeURIComponent(name)}`,
-                    { method: 'DELETE' }
-                );
+                if (usesOAuth) {
+                    await this.apiCall(
+                        `/api/oauth/accounts/${encodeURIComponent(String(item.oauth_provider || ''))}/${encodeURIComponent(String(item.oauth_ref || ''))}`,
+                        { method: 'DELETE' }
+                    );
+                } else {
+                    await this.apiCall(
+                        `/api/providers/${this.selectedClient}/${encodeURIComponent(name)}`,
+                        { method: 'DELETE' }
+                    );
+                }
                 this.showAlert(
                     'success',
-                    this.tf('providers.deletedMessage', { client: this.providerToastClientLabel() }),
-                    this.tf('providers.deletedTitle', { name })
+                    this.tf(usesOAuth ? 'providers.oauthDeletedMessage' : 'providers.deletedMessage', { client: this.providerToastClientLabel() }),
+                    this.tf(usesOAuth ? 'providers.oauthDeletedTitle' : 'providers.deletedTitle', { name: displayName })
                 );
                 await this.loadProviders();
                 await this.refreshStatus();
@@ -2077,6 +2745,9 @@ function app() {
                 return pr > max ? pr : max;
             }, 0);
             this.providerForm = {
+                auth_type: 'api_key',
+                oauth_provider: this.defaultOAuthProviderValue(),
+                oauth_ref: '',
                 name: '',
                 base_url: '',
                 proxy_mode: 'default',
@@ -2242,6 +2913,9 @@ function app() {
             this.showAddProviderModal = false;
             this.showEditProviderModal = false;
             this.providerForm = {
+                auth_type: 'api_key',
+                oauth_provider: this.defaultOAuthProviderValue(),
+                oauth_ref: '',
                 name: '',
                 base_url: '',
                 proxy_mode: 'default',

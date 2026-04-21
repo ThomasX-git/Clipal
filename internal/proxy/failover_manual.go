@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -51,6 +50,19 @@ func (cp *ClientProxy) forwardManual(w http.ResponseWriter, req *http.Request, p
 	}
 
 	provider := cp.providers[index]
+	requestCtx, ok := requestContextFromRequest(req)
+	if !ok {
+		requestCtx = requestContextForClientPath(cp.clientType, path, false)
+	}
+	if !providerSupportsCapability(provider, requestCtx.Capability) {
+		message := "Pinned provider does not support this request type."
+		if provider.UsesOAuth() {
+			message = "Pinned provider only supports " + supportedCapabilitySummary(provider) + "."
+		}
+		cp.recordTerminalRequest(time.Now(), req, provider.Name, http.StatusServiceUnavailable, "request_rejected", message)
+		writeProxyError(w, message, http.StatusServiceUnavailable)
+		return
+	}
 	scope := routingScopeForRequest(req)
 	if index < 0 || index >= len(cp.providerKeys) || len(cp.providerKeys[index]) == 0 {
 		cp.recordTerminalRequest(time.Now(), req, provider.Name, http.StatusServiceUnavailable, "all_providers_unavailable", "Pinned provider has no configured API keys.")
@@ -60,27 +72,18 @@ func (cp *ClientProxy) forwardManual(w http.ResponseWriter, req *http.Request, p
 	keyIndex := cp.preferredKeyIndexForScope(index, scope)
 	attemptCtx, cancelAttempt := context.WithCancelCause(req.Context())
 	reqWithAttemptCtx := req.WithContext(attemptCtx)
-	proxyReq, err := cp.createProxyRequest(reqWithAttemptCtx, provider, cp.providerKeys[index][keyIndex], path, bodyBytes)
+	resp, prepared, err := cp.doProviderRequest(reqWithAttemptCtx, provider, index, cp.providerKeys[index][keyIndex], path, bodyBytes)
 	if err != nil {
-		logger.Error("[%s] failed to create request for %s: %v", cp.clientType, provider.Name, err)
 		cancelAttempt(nil)
-		cp.recordTerminalRequest(time.Now(), req, provider.Name, http.StatusBadGateway, "request_rejected", "Failed to create upstream request.")
-		writeProxyError(w, "Failed to create upstream request", http.StatusBadGateway)
-		return
-	}
-
-	proxyReq.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(bodyBytes)), nil
-	}
-
-	//nolint:gosec // Clipal is a user-configured reverse proxy and intentionally forwards to the pinned upstream provider.
-	resp, err := cp.upstreamHTTPClient(index).Do(proxyReq)
-	if err != nil {
-		if req.Context().Err() != nil {
-			cancelAttempt(nil)
+		if !prepared {
+			logger.Error("[%s] failed to create request for %s: %v", cp.clientType, provider.Name, err)
+			cp.recordTerminalRequest(time.Now(), req, provider.Name, http.StatusBadGateway, "request_rejected", "Failed to create upstream request.")
+			writeProxyError(w, "Failed to create upstream request", http.StatusBadGateway)
 			return
 		}
-		cancelAttempt(nil)
+		if req.Context().Err() != nil {
+			return
+		}
 		cp.recordTerminalRequest(time.Now(), req, provider.Name, http.StatusBadGateway, "failed_before_response", describeAttemptFailure(provider.Name, "network", 0, true)+".")
 		writeProxyError(w, "Upstream request failed", http.StatusBadGateway)
 		return

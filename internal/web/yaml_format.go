@@ -60,21 +60,31 @@ func formatClientConfigYAML(clientType string, cc config.ClientConfig) []byte {
 			prevTier = tier
 		}
 
+		authType := p.NormalizedAuthType()
 		writeBufferString(&b, fmt.Sprintf("  - name: %s\n", yamlDoubleQuote(p.Name)))
-		writeBufferString(&b, fmt.Sprintf("    base_url: %s\n", yamlDoubleQuote(p.BaseURL)))
+		if authType == config.ProviderAuthTypeAPIKey || strings.TrimSpace(p.BaseURL) != "" {
+			writeBufferString(&b, fmt.Sprintf("    base_url: %s\n", yamlDoubleQuote(p.BaseURL)))
+		}
+		if authType == config.ProviderAuthTypeOAuth {
+			writeBufferString(&b, fmt.Sprintf("    auth_type: %s\n", yamlDoubleQuote(string(authType))))
+			writeBufferString(&b, fmt.Sprintf("    oauth_provider: %s\n", yamlDoubleQuote(string(p.NormalizedOAuthProvider()))))
+			writeBufferString(&b, fmt.Sprintf("    oauth_ref: %s\n", yamlDoubleQuote(p.NormalizedOAuthRef())))
+		}
 		if p.NormalizedProxyMode() != config.ProviderProxyModeDefault {
 			writeBufferString(&b, fmt.Sprintf("    proxy_mode: %s\n", yamlDoubleQuote(string(p.NormalizedProxyMode()))))
 		}
 		if p.NormalizedProxyMode() == config.ProviderProxyModeCustom && p.NormalizedProxyURL() != "" {
 			writeBufferString(&b, fmt.Sprintf("    proxy_url: %s\n", yamlDoubleQuote(p.NormalizedProxyURL())))
 		}
-		keys := p.NormalizedAPIKeys()
-		if len(keys) <= 1 {
-			writeBufferString(&b, fmt.Sprintf("    api_key: %s\n", yamlDoubleQuote(p.PrimaryAPIKey())))
-		} else {
-			writeBufferString(&b, "    api_keys:\n")
-			for _, key := range keys {
-				writeBufferString(&b, fmt.Sprintf("      - %s\n", yamlDoubleQuote(key)))
+		if authType == config.ProviderAuthTypeAPIKey {
+			keys := p.NormalizedAPIKeys()
+			if len(keys) <= 1 {
+				writeBufferString(&b, fmt.Sprintf("    api_key: %s\n", yamlDoubleQuote(p.PrimaryAPIKey())))
+			} else {
+				writeBufferString(&b, "    api_keys:\n")
+				for _, key := range keys {
+					writeBufferString(&b, fmt.Sprintf("      - %s\n", yamlDoubleQuote(key)))
+				}
 			}
 		}
 		writeBufferString(&b, fmt.Sprintf("    priority: %d\n", p.Priority))

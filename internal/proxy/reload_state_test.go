@@ -719,6 +719,166 @@ func TestReloadProviderConfigsLocked_DoesNotPreserveSuppressionStateWhenGlobalPr
 	}
 }
 
+func TestReloadProviderConfigsLocked_PreservesOAuthSuppressionStateWhenIdentityMatches(t *testing.T) {
+	dir := t.TempDir()
+	global := config.DefaultGlobalConfig()
+	global.ListenAddr = "127.0.0.1"
+	global.Port = 3333
+	initial := config.ClientConfig{
+		Mode: config.ClientModeAuto,
+		Providers: []config.Provider{
+			{
+				Name:          "codex-oauth",
+				AuthType:      config.ProviderAuthTypeOAuth,
+				OAuthProvider: config.OAuthProviderCodex,
+				OAuthRef:      "codex-sean-example-com",
+				Priority:      1,
+			},
+		},
+	}
+	writeProxyReloadFixture(t, dir, global, initial)
+
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	router := NewRouter(cfg)
+	oldProxy := router.proxies[ClientOpenAI]
+	now := time.Now()
+
+	oldProxy.deactivated[0] = providerDeactivation{
+		at:      now.Add(-time.Second),
+		until:   now.Add(30 * time.Second),
+		reason:  "rate_limit",
+		status:  http.StatusTooManyRequests,
+		message: "slow down",
+	}
+	oldProxy.keyDeactivated[0][0] = providerDeactivation{
+		at:      now.Add(-time.Second),
+		until:   now.Add(20 * time.Second),
+		reason:  "rate_limit",
+		status:  http.StatusTooManyRequests,
+		message: "account cooldown",
+	}
+	oldProxy.breakers[0].state = circuitOpen
+	oldProxy.breakers[0].openedAt = now.Add(-5 * time.Second)
+
+	reloaded := config.ClientConfig{
+		Mode: config.ClientModeAuto,
+		Providers: []config.Provider{
+			{
+				Name:          "codex-oauth",
+				AuthType:      config.ProviderAuthTypeOAuth,
+				OAuthProvider: config.OAuthProviderCodex,
+				OAuthRef:      "codex-sean-example-com",
+				Priority:      1,
+			},
+		},
+	}
+	writeProxyReloadFixture(t, dir, global, reloaded)
+
+	if err := router.reloadProviderConfigsLocked(); err != nil {
+		t.Fatalf("reloadProviderConfigsLocked: %v", err)
+	}
+
+	newProxy := router.proxies[ClientOpenAI]
+	if got := newProxy.deactivated[0].reason; got != "rate_limit" {
+		t.Fatalf("provider cooldown reason = %q", got)
+	}
+	if newProxy.deactivated[0].until.IsZero() {
+		t.Fatalf("expected provider cooldown to be preserved")
+	}
+	if got := newProxy.keyDeactivated[0][0].reason; got != "rate_limit" {
+		t.Fatalf("key cooldown reason = %q", got)
+	}
+	if newProxy.keyDeactivated[0][0].until.IsZero() {
+		t.Fatalf("expected key cooldown to be preserved")
+	}
+	if newProxy.breakers[0].state != circuitOpen {
+		t.Fatalf("breaker state = %s, want open", newProxy.breakers[0].state)
+	}
+}
+
+func TestReloadProviderConfigsLocked_DoesNotPreserveOAuthSuppressionStateWhenOAuthRefChanges(t *testing.T) {
+	dir := t.TempDir()
+	global := config.DefaultGlobalConfig()
+	global.ListenAddr = "127.0.0.1"
+	global.Port = 3333
+	initial := config.ClientConfig{
+		Mode: config.ClientModeAuto,
+		Providers: []config.Provider{
+			{
+				Name:          "codex-oauth",
+				AuthType:      config.ProviderAuthTypeOAuth,
+				OAuthProvider: config.OAuthProviderCodex,
+				OAuthRef:      "codex-sean-example-com",
+				Priority:      1,
+			},
+		},
+	}
+	writeProxyReloadFixture(t, dir, global, initial)
+
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	router := NewRouter(cfg)
+	oldProxy := router.proxies[ClientOpenAI]
+	now := time.Now()
+
+	oldProxy.deactivated[0] = providerDeactivation{
+		at:      now.Add(-time.Second),
+		until:   now.Add(30 * time.Second),
+		reason:  "rate_limit",
+		status:  http.StatusTooManyRequests,
+		message: "slow down",
+	}
+	oldProxy.keyDeactivated[0][0] = providerDeactivation{
+		at:      now.Add(-time.Second),
+		until:   now.Add(20 * time.Second),
+		reason:  "rate_limit",
+		status:  http.StatusTooManyRequests,
+		message: "account cooldown",
+	}
+	oldProxy.breakers[0].state = circuitOpen
+	oldProxy.breakers[0].openedAt = now.Add(-5 * time.Second)
+
+	reloaded := config.ClientConfig{
+		Mode: config.ClientModeAuto,
+		Providers: []config.Provider{
+			{
+				Name:          "codex-oauth",
+				AuthType:      config.ProviderAuthTypeOAuth,
+				OAuthProvider: config.OAuthProviderCodex,
+				OAuthRef:      "codex-sean-other-account",
+				Priority:      1,
+			},
+		},
+	}
+	writeProxyReloadFixture(t, dir, global, reloaded)
+
+	if err := router.reloadProviderConfigsLocked(); err != nil {
+		t.Fatalf("reloadProviderConfigsLocked: %v", err)
+	}
+
+	newProxy := router.proxies[ClientOpenAI]
+	if !newProxy.deactivated[0].until.IsZero() || newProxy.deactivated[0].reason != "" {
+		t.Fatalf("provider cooldown should not carry across oauth_ref change: %#v", newProxy.deactivated[0])
+	}
+	if !newProxy.keyDeactivated[0][0].until.IsZero() || newProxy.keyDeactivated[0][0].reason != "" {
+		t.Fatalf("key cooldown should not carry across oauth_ref change: %#v", newProxy.keyDeactivated[0][0])
+	}
+	if newProxy.breakers[0].state != circuitClosed {
+		t.Fatalf("breaker state = %s, want closed", newProxy.breakers[0].state)
+	}
+}
+
 func TestTimeUntilNextAvailable_PicksEarliestBlockedSource(t *testing.T) {
 	cbCfg := circuitBreakerConfig{
 		enabled:             true,

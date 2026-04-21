@@ -183,3 +183,65 @@ func TestStoreRecordCanSkipSuccessCount(t *testing.T) {
 		t.Fatalf("snapshot = %#v", got)
 	}
 }
+
+func TestStoreDeleteProvidersWithRollbackRestoresDeletedUsage(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	older := time.Date(2026, 4, 8, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(5 * time.Minute)
+	if err := store.RecordUsage("openai", "p1", UsageSnapshot{
+		UsageDelta: UsageDelta{InputTokens: 1, OutputTokens: 2},
+		Usage:      map[string]any{"prompt_tokens": 1.0, "completion_tokens": 2.0, "total_tokens": 3.0},
+	}, older); err != nil {
+		t.Fatalf("RecordUsage: %v", err)
+	}
+
+	restore, err := store.DeleteProvidersWithRollback([]ProviderRef{
+		{ClientType: "openai", Provider: "p1"},
+		{ClientType: "openai", Provider: "p1"},
+		{ClientType: "openai", Provider: "missing"},
+	})
+	if err != nil {
+		t.Fatalf("DeleteProvidersWithRollback: %v", err)
+	}
+	if _, ok := store.ProviderSnapshot("openai", "p1"); ok {
+		t.Fatalf("expected provider snapshot to be deleted")
+	}
+
+	if err := store.RecordUsage("openai", "p1", UsageSnapshot{
+		UsageDelta: UsageDelta{InputTokens: 10, OutputTokens: 20},
+		Usage:      map[string]any{"prompt_tokens": 10.0, "completion_tokens": 20.0, "total_tokens": 30.0},
+	}, newer); err != nil {
+		t.Fatalf("RecordUsage after delete: %v", err)
+	}
+
+	if err := restore(); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	got, ok := store.ProviderSnapshot("openai", "p1")
+	if !ok {
+		t.Fatalf("expected restored provider snapshot")
+	}
+	if got.RequestCount != 2 || got.SuccessCount != 2 || got.TotalTokens != 33 {
+		t.Fatalf("restored snapshot = %#v", got)
+	}
+	if !got.LastUsedAt.Equal(newer) {
+		t.Fatalf("last_used_at = %v want %v", got.LastUsedAt, newer)
+	}
+	if got.Usage["total_tokens"] != float64(30) {
+		t.Fatalf("usage = %#v", got.Usage)
+	}
+
+	reloaded, err := NewStore(dir)
+	if err != nil {
+		t.Fatalf("NewStore reload: %v", err)
+	}
+	if got, ok := reloaded.ProviderSnapshot("openai", "p1"); !ok || got.TotalTokens != 33 {
+		t.Fatalf("reloaded snapshot = %#v ok=%v", got, ok)
+	}
+}

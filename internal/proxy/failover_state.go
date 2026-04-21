@@ -515,14 +515,24 @@ func (cp *ClientProxy) activeProviderCount() int {
 	return count
 }
 
-func (cp *ClientProxy) getActiveCountAndStartIndexForScope(scope routingScope) (active int, startIndex int) {
+func (cp *ClientProxy) providerAvailableForCapabilityLocked(providerIndex int, now time.Time, capability RequestCapability) bool {
+	if providerIndex < 0 || providerIndex >= len(cp.providers) {
+		return false
+	}
+	if !providerSupportsCapability(cp.providers[providerIndex], capability) {
+		return false
+	}
+	return cp.providerAvailableForRoutingLocked(providerIndex, now)
+}
+
+func (cp *ClientProxy) getActiveCountAndStartIndexForScope(scope routingScope, capability RequestCapability) (active int, startIndex int) {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
 	now := time.Now()
 
 	// Count active providers.
 	for i := range cp.providers {
-		if cp.providerAvailableForRoutingLocked(i, now) {
+		if cp.providerAvailableForCapabilityLocked(i, now, capability) {
 			active++
 		}
 	}
@@ -530,7 +540,7 @@ func (cp *ClientProxy) getActiveCountAndStartIndexForScope(scope routingScope) (
 		return active, 0
 	}
 
-	startIndex = cp.ensureActiveScopeIndexLocked(scope, now)
+	startIndex = cp.ensureActiveScopeIndexLocked(scope, now, capability)
 	return active, startIndex
 }
 
@@ -627,16 +637,21 @@ func (cp *ClientProxy) scopeIndexLocked(scope routingScope) int {
 	}
 }
 
-func (cp *ClientProxy) ensureActiveScopeIndexLocked(scope routingScope, now time.Time) int {
+func (cp *ClientProxy) ensureActiveScopeIndexLocked(scope routingScope, now time.Time, capability RequestCapability) int {
 	idx := cp.scopeIndexLocked(scope)
 	if idx < 0 || idx >= len(cp.providers) {
 		idx = 0
 	}
-	if cp.providerAvailableForRoutingLocked(idx, now) {
-		cp.setScopeIndexLocked(idx, scope)
-		return idx
+
+	for step := 0; step < len(cp.providers); step++ {
+		candidate := (idx + step) % len(cp.providers)
+		if !cp.providerAvailableForCapabilityLocked(candidate, now, capability) {
+			continue
+		}
+		cp.setScopeIndexLocked(candidate, scope)
+		return candidate
 	}
-	idx = cp.nextActiveIndexLocked(idx)
+
 	cp.setScopeIndexLocked(idx, scope)
 	return idx
 }

@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -224,6 +225,46 @@ func TestLocalOnly_APIStateChanging_RejectsWrongContentType(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestLocalOnly_APIStateChanging_AllowsMultipartForOAuthImport(t *testing.T) {
+	h := NewHandler(t.TempDir(), "test", nil)
+	called := false
+	handler := h.localOnly(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("client_type", "openai"); err != nil {
+		t.Fatalf("WriteField client_type: %v", err)
+	}
+	part, err := writer.CreateFormFile("files", "codex.json")
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := part.Write([]byte(`{"type":"codex"}`)); err != nil {
+		t.Fatalf("part.Write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/oauth/import/cli-proxy-api", &body)
+	req.Host = "localhost:3333"
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Header.Set("X-Clipal-UI", "1")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !called {
+		t.Fatalf("expected wrapped handler to be called")
 	}
 }
 

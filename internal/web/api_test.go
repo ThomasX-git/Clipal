@@ -14,6 +14,7 @@ import (
 
 	"github.com/lansespirit/Clipal/internal/config"
 	"github.com/lansespirit/Clipal/internal/logger"
+	oauthpkg "github.com/lansespirit/Clipal/internal/oauth"
 	"github.com/lansespirit/Clipal/internal/proxy"
 	"github.com/lansespirit/Clipal/internal/telemetry"
 	"github.com/lansespirit/Clipal/internal/testutil"
@@ -334,6 +335,57 @@ providers:
 	}
 }
 
+func TestHandleExportConfig_OAuthProviderMetadata(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "openai.yaml"), []byte(`
+providers:
+  - name: codex-sean-example-com
+    auth_type: oauth
+    oauth_provider: codex
+    oauth_ref: codex_acct_123
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	api := NewAPI(dir, "test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/config/export", nil)
+	w := httptest.NewRecorder()
+	api.HandleExportConfig(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	got := testutil.DecodeJSONMap(t, w.Body.Bytes())
+	openAIObj, ok := got["openai"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected openai object, got %T", got["openai"])
+	}
+	providers, ok := openAIObj["providers"].([]any)
+	if !ok || len(providers) != 1 {
+		t.Fatalf("expected openai.providers array of len 1, got %T len=%d", openAIObj["providers"], len(providers))
+	}
+	p0, ok := providers[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected provider object, got %T", providers[0])
+	}
+	if p0["auth_type"] != "oauth" {
+		t.Fatalf("expected auth_type=oauth, got %v", p0["auth_type"])
+	}
+	if p0["oauth_provider"] != "codex" {
+		t.Fatalf("expected oauth_provider=codex, got %v", p0["oauth_provider"])
+	}
+	if p0["oauth_ref"] != "codex_acct_123" {
+		t.Fatalf("expected oauth_ref=codex_acct_123, got %v", p0["oauth_ref"])
+	}
+	if _, ok := p0["api_key"]; ok {
+		t.Fatalf("did not expect api_key in oauth export")
+	}
+	if _, ok := p0["api_keys"]; ok {
+		t.Fatalf("did not expect api_keys in oauth export")
+	}
+}
+
 func TestHandleUpdateGlobalConfig_AcceptsSnakeCaseNotifications(t *testing.T) {
 	for _, proxyURL := range []string{"http://127.0.0.1:7890", "socks5://127.0.0.1:1080"} {
 		t.Run(proxyURL, func(t *testing.T) {
@@ -544,6 +596,198 @@ func TestHandleAddProvider_AcceptsAPIKeys(t *testing.T) {
 	}
 	if got := cfg.OpenAI.Providers[0].OpenAIReasoningEffort(); got != "high" {
 		t.Fatalf("reasoning_effort = %q", got)
+	}
+}
+
+func TestHandleGetProviders_OAuthMetadata(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "openai.yaml"), []byte(`
+providers:
+  - name: codex-sean-example-com
+    auth_type: oauth
+    oauth_provider: codex
+    oauth_ref: codex_acct_123
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	api := NewAPI(dir, "test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/providers/openai", nil)
+	w := httptest.NewRecorder()
+	api.HandleGetProviders(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	var got []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode json: %v\nbody=%s", err, w.Body.String())
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(got))
+	}
+	if got[0]["auth_type"] != "oauth" {
+		t.Fatalf("expected auth_type=oauth, got %v", got[0]["auth_type"])
+	}
+	if got[0]["oauth_provider"] != "codex" {
+		t.Fatalf("expected oauth_provider=codex, got %v", got[0]["oauth_provider"])
+	}
+	if got[0]["oauth_ref"] != "codex_acct_123" {
+		t.Fatalf("expected oauth_ref=codex_acct_123, got %v", got[0]["oauth_ref"])
+	}
+	if got[0]["oauth_auth_status"] != "reauth_needed" {
+		t.Fatalf("expected oauth_auth_status=reauth_needed, got %v", got[0]["oauth_auth_status"])
+	}
+	if _, ok := got[0]["api_key"]; ok {
+		t.Fatalf("did not expect api_key in provider listing")
+	}
+	if _, ok := got[0]["api_keys"]; ok {
+		t.Fatalf("did not expect api_keys in provider listing")
+	}
+}
+
+func TestHandleGetProviders_OAuthMetadata_EnrichesCredentialStatus(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "openai.yaml"), []byte(`
+providers:
+  - name: codex-sean-example-com
+    auth_type: oauth
+    oauth_provider: codex
+    oauth_ref: codex-sean-example-com
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	api := NewAPI(dir, "test", nil)
+	expiresAt := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
+	lastRefresh := time.Now().UTC().Add(-30 * time.Minute).Truncate(time.Second)
+	if err := api.oauth.Store().Save(&oauthpkg.Credential{
+		Ref:          "codex-sean-example-com",
+		Provider:     config.OAuthProviderCodex,
+		Email:        "sean@example.com",
+		AccessToken:  "access-1",
+		RefreshToken: "refresh-1",
+		ExpiresAt:    expiresAt,
+		LastRefresh:  lastRefresh,
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/providers/openai", nil)
+	w := httptest.NewRecorder()
+	api.HandleGetProviders(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	var got []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode json: %v\nbody=%s", err, w.Body.String())
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(got))
+	}
+	if got[0]["display_name"] != "sean@example.com" {
+		t.Fatalf("display_name = %v, want sean@example.com", got[0]["display_name"])
+	}
+	if got[0]["oauth_auth_status"] != "ready" {
+		t.Fatalf("oauth_auth_status = %v, want ready", got[0]["oauth_auth_status"])
+	}
+	if got[0]["oauth_expires_at"] != expiresAt.Format(time.RFC3339) {
+		t.Fatalf("oauth_expires_at = %v, want %s", got[0]["oauth_expires_at"], expiresAt.Format(time.RFC3339))
+	}
+	if got[0]["oauth_last_refresh"] != lastRefresh.Format(time.RFC3339) {
+		t.Fatalf("oauth_last_refresh = %v, want %s", got[0]["oauth_last_refresh"], lastRefresh.Format(time.RFC3339))
+	}
+}
+
+func TestHandleGetProviders_OAuthMetadata_RefreshDue(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "openai.yaml"), []byte(`
+providers:
+  - name: codex-sean-example-com
+    auth_type: oauth
+    oauth_provider: codex
+    oauth_ref: codex-sean-example-com
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	api := NewAPI(dir, "test", nil)
+	if err := api.oauth.Store().Save(&oauthpkg.Credential{
+		Ref:          "codex-sean-example-com",
+		Provider:     config.OAuthProviderCodex,
+		Email:        "sean@example.com",
+		AccessToken:  "access-1",
+		RefreshToken: "refresh-1",
+		ExpiresAt:    time.Now().UTC().Add(-10 * time.Minute),
+		LastRefresh:  time.Now().UTC().Add(-2 * time.Hour),
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/providers/openai", nil)
+	w := httptest.NewRecorder()
+	api.HandleGetProviders(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	var got []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode json: %v\nbody=%s", err, w.Body.String())
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(got))
+	}
+	if got[0]["oauth_auth_status"] != "refresh_due" {
+		t.Fatalf("oauth_auth_status = %v, want refresh_due", got[0]["oauth_auth_status"])
+	}
+}
+
+func TestHandleAddProvider_RejectsOAuthAuthorizationFlowShortcut(t *testing.T) {
+	dir := t.TempDir()
+	api := NewAPI(dir, "test", nil)
+
+	body := []byte(`{
+  "name": "codex-sean-example-com",
+  "auth_type": "oauth",
+  "oauth_provider": "codex",
+  "oauth_ref": "codex_acct_123",
+  "priority": 1,
+  "enabled": true
+}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/providers/codex", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	api.HandleAddProvider(w, req)
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+}
+
+func TestHandleAddProvider_RejectsMixedOAuthAndAPIKeySources(t *testing.T) {
+	dir := t.TempDir()
+	api := NewAPI(dir, "test", nil)
+
+	body := []byte(`{
+  "name": "codex-sean-example-com",
+  "base_url": "https://api.openai.com",
+  "auth_type": "oauth",
+  "oauth_provider": "codex",
+  "oauth_ref": "codex_acct_123",
+  "api_key": "secret",
+  "priority": 1
+}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/providers/codex", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	api.HandleAddProvider(w, req)
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
 	}
 }
 
@@ -1022,6 +1266,103 @@ providers:
 	})
 }
 
+func TestHandleUpdateProvider_RejectsOAuthCredentialSourceChange(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "openai.yaml"), []byte(`
+mode: auto
+providers:
+  - name: p1
+    base_url: https://one.example
+    api_key: key1
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	api := NewAPI(dir, "test", nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/providers/codex/p1", bytes.NewReader([]byte(`{
+  "auth_type":"oauth",
+  "oauth_provider":"codex",
+  "oauth_ref":"codex_acct_123"
+}`)))
+	w := httptest.NewRecorder()
+	api.HandleUpdateProvider(w, req)
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if len(cfg.OpenAI.Providers) != 1 {
+		t.Fatalf("providers len = %d, want 1", len(cfg.OpenAI.Providers))
+	}
+	provider := cfg.OpenAI.Providers[0]
+	if got := provider.NormalizedAuthType(); got != config.ProviderAuthTypeAPIKey {
+		t.Fatalf("auth_type = %q, want %q", got, config.ProviderAuthTypeAPIKey)
+	}
+}
+
+func TestHandleUpdateProvider_AllowsEnabledOnlyUpdateForOAuthProvider(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "openai.yaml"), []byte(`
+mode: auto
+providers:
+  - name: codex-sean-example-com
+    auth_type: oauth
+    oauth_provider: codex
+    oauth_ref: codex-sean-example-com
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	api := NewAPI(dir, "test", nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/providers/codex/codex-sean-example-com", bytes.NewReader([]byte(`{
+  "enabled": false
+}`)))
+	w := httptest.NewRecorder()
+	api.HandleUpdateProvider(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	provider := cfg.OpenAI.Providers[0]
+	if provider.Enabled == nil || *provider.Enabled {
+		t.Fatalf("enabled=%v", provider.Enabled)
+	}
+}
+
+func TestHandleUpdateProvider_RejectsEditingExistingOAuthProvider(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "openai.yaml"), []byte(`
+mode: auto
+providers:
+  - name: codex-sean-example-com
+    auth_type: oauth
+    oauth_provider: codex
+    oauth_ref: codex-sean-example-com
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	api := NewAPI(dir, "test", nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/providers/codex/codex-sean-example-com", bytes.NewReader([]byte(`{
+  "base_url":"https://api.openai.com"
+}`)))
+	w := httptest.NewRecorder()
+	api.HandleUpdateProvider(w, req)
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+}
+
 func TestHandleUpdateProvider_ClearsOverrideFields(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "claude.yaml"), []byte(`
@@ -1145,6 +1486,67 @@ providers:
 	}
 	if _, ok := api.telemetry.ProviderSnapshot("openai", "p1"); ok {
 		t.Fatalf("expected usage snapshot for deleted provider to be removed")
+	}
+}
+
+func TestHandleDeleteProvider_OAuthDeletesAccountAndLinkedProviders(t *testing.T) {
+	dir := t.TempDir()
+	api := NewAPI(dir, "test", nil)
+	if err := api.oauth.Store().Save(&oauthpkg.Credential{
+		Ref:          "codex-sean-example-com",
+		Provider:     config.OAuthProviderCodex,
+		Email:        "sean@example.com",
+		AccessToken:  "access-1",
+		RefreshToken: "refresh-1",
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "openai.yaml"), []byte(`
+mode: manual
+pinned_provider: codex-sean-example-com
+providers:
+  - name: codex-sean-example-com
+    auth_type: oauth
+    oauth_provider: codex
+    oauth_ref: codex-sean-example-com
+    priority: 1
+  - name: backup
+    base_url: https://api.openai.com
+    api_key: key1
+    priority: 2
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := api.telemetry.RecordUsage("openai", "codex-sean-example-com", telemetry.UsageSnapshot{UsageDelta: telemetry.UsageDelta{InputTokens: 1, OutputTokens: 2}}, time.Now()); err != nil {
+		t.Fatalf("RecordUsage: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/providers/codex/codex-sean-example-com", nil)
+	w := httptest.NewRecorder()
+	api.HandleDeleteProvider(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if len(cfg.OpenAI.Providers) != 1 || cfg.OpenAI.Providers[0].Name != "backup" {
+		t.Fatalf("providers=%#v", cfg.OpenAI.Providers)
+	}
+	if cfg.OpenAI.Mode != config.ClientModeAuto {
+		t.Fatalf("mode = %q, want auto", cfg.OpenAI.Mode)
+	}
+	if strings.TrimSpace(cfg.OpenAI.PinnedProvider) != "" {
+		t.Fatalf("pinned_provider = %q, want empty", cfg.OpenAI.PinnedProvider)
+	}
+	if _, err := api.oauth.Load(config.OAuthProviderCodex, "codex-sean-example-com"); !os.IsNotExist(err) {
+		t.Fatalf("Load err = %v, want not-exist", err)
+	}
+	if _, ok := api.telemetry.ProviderSnapshot("openai", "codex-sean-example-com"); ok {
+		t.Fatalf("expected usage snapshot for deleted oauth provider to be removed")
 	}
 }
 

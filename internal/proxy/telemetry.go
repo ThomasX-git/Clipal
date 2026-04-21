@@ -17,9 +17,12 @@ type streamSuccess struct {
 }
 
 type providerTelemetryIdentity struct {
-	baseURL  string
-	keys     string
-	priority int
+	authType      config.ProviderAuthType
+	baseURL       string
+	keys          string
+	oauthProvider config.OAuthProvider
+	oauthRef      string
+	priority      int
 }
 
 func (r *Router) ProviderUsageSnapshots(clientType string) map[string]telemetry.ProviderUsage {
@@ -135,7 +138,7 @@ func (r *Router) reconcileTelemetryUsageForClient(clientType string, oldProvider
 			continue
 		}
 		if len(oldNames) > 0 && len(newNames) > 0 {
-			logger.Warn("skipping ambiguous usage telemetry rename for %s providers with base_url=%q priority=%d", clientType, identity.baseURL, identity.priority)
+			logger.Warn("skipping ambiguous usage telemetry rename for %s providers with auth_type=%q priority=%d", clientType, identity.authType, identity.priority)
 		}
 	}
 
@@ -151,9 +154,12 @@ func (r *Router) reconcileTelemetryUsageForClient(clientType string, oldProvider
 
 func providerUsageIdentity(provider config.Provider) providerTelemetryIdentity {
 	return providerTelemetryIdentity{
-		baseURL:  strings.TrimSpace(provider.BaseURL),
-		keys:     strings.Join(providerUsageKeySet(provider), "\x00"),
-		priority: provider.Priority,
+		authType:      provider.NormalizedAuthType(),
+		baseURL:       strings.TrimSpace(provider.BaseURL),
+		keys:          strings.Join(providerUsageKeySet(provider), "\x00"),
+		oauthProvider: provider.NormalizedOAuthProvider(),
+		oauthRef:      provider.NormalizedOAuthRef(),
+		priority:      provider.Priority,
 	}
 }
 

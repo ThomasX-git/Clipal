@@ -98,7 +98,10 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 		return
 	}
 	scope := routingScopeForRequest(req)
-	requestCtx, _ := requestContextFromRequest(req)
+	requestCtx, ok := requestContextFromRequest(req)
+	if !ok {
+		requestCtx = requestContextForClientPath(cp.clientType, path, false)
+	}
 
 	cp.reactivateExpired()
 
@@ -125,7 +128,7 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 	requestKey := extractRequestStickyKey(requestCtx, bodyBytes)
 
 	// Atomically get active count and start index to avoid TOCTOU race.
-	active, startIndex := cp.getActiveCountAndStartIndexForScope(scope)
+	active, startIndex := cp.getActiveCountAndStartIndexForScope(scope, requestCtx.Capability)
 	if active == 0 {
 		if wait, reason, ok := cp.timeUntilNextAvailable(); ok && wait > 0 {
 			result, status, detail := unavailableRequestStatus(reason)
@@ -141,7 +144,9 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 		return
 	}
 	if preferredIndex, preferredKeyIndex, ok := cp.resolveStickyProvider(scope, requestKey, time.Now()); ok {
-		if !cp.isDeactivated(preferredIndex) && cp.activeKeyCount(preferredIndex) > 0 {
+		if providerSupportsCapability(cp.providers[preferredIndex], requestCtx.Capability) &&
+			!cp.isDeactivated(preferredIndex) &&
+			cp.activeKeyCount(preferredIndex) > 0 {
 			startIndex = preferredIndex
 			if preferredKeyIndex >= 0 {
 				cp.setCurrentKeyIndexForScope(preferredIndex, preferredKeyIndex, scope)
@@ -163,7 +168,9 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 		}
 
 		index := (startIndex + offset) % len(cp.providers)
-		if cp.isDeactivated(index) || cp.activeKeyCount(index) == 0 {
+		if !providerSupportsCapability(cp.providers[index], requestCtx.Capability) ||
+			cp.isDeactivated(index) ||
+			cp.activeKeyCount(index) == 0 {
 			continue
 		}
 		now := time.Now()
@@ -214,30 +221,23 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 
 			attemptCtx, cancelAttempt := context.WithCancelCause(req.Context())
 			reqWithAttemptCtx := req.WithContext(attemptCtx)
-			proxyReq, err := cp.createProxyRequest(reqWithAttemptCtx, provider, apiKey, path, bodyBytes)
+			resp, prepared, err := cp.doProviderRequest(reqWithAttemptCtx, provider, index, apiKey, path, bodyBytes)
 			if err != nil {
-				summary := describeRequestBuildFailure(provider.Name, err)
-				attemptSummaries = append(attemptSummaries, summary)
-				lastFailedProvider = provider.Name
-				logger.Error("[%s] %s", cp.clientType, summary)
-				if busyProbeHeld {
-					cp.releaseProviderBusyProbe(index)
-					busyProbeHeld = false
+				if !prepared {
+					summary := describeRequestBuildFailure(provider.Name, err)
+					attemptSummaries = append(attemptSummaries, summary)
+					lastFailedProvider = provider.Name
+					logger.Error("[%s] %s", cp.clientType, summary)
+					if busyProbeHeld {
+						cp.releaseProviderBusyProbe(index)
+						busyProbeHeld = false
+					}
+					cp.releaseCircuitPermit(index, allow.usedProbe)
+					cancelAttempt(nil)
+					providerFailed = true
+					break
 				}
-				cp.releaseCircuitPermit(index, allow.usedProbe)
-				cancelAttempt(nil)
-				providerFailed = true
-				break
-			}
-			hadUpstreamAttempt = true
-
-			proxyReq.GetBody = func() (io.ReadCloser, error) {
-				return io.NopCloser(bytes.NewReader(bodyBytes)), nil
-			}
-
-			//nolint:gosec // Clipal is a user-configured reverse proxy and intentionally forwards to configured upstream base URLs.
-			resp, err := cp.upstreamHTTPClient(index).Do(proxyReq)
-			if err != nil {
+				hadUpstreamAttempt = true
 				if req.Context().Err() != nil {
 					if busyProbeHeld {
 						cp.releaseProviderBusyProbe(index)
@@ -271,6 +271,7 @@ func (cp *ClientProxy) forwardWithFailover(w http.ResponseWriter, req *http.Requ
 				providerFailed = true
 				break
 			}
+			hadUpstreamAttempt = true
 
 			var (
 				action   failureAction

@@ -368,6 +368,151 @@ func TestValidate_ProviderAPIKeys_RejectsMixedForms(t *testing.T) {
 	}
 }
 
+func TestValidate_ProviderOAuthCodexSupportedForOpenAIWithoutBaseURL(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Global: DefaultGlobalConfig(),
+		OpenAI: ClientConfig{
+			Mode: ClientModeAuto,
+			Providers: []Provider{
+				{
+					Name:          "codex-oauth",
+					AuthType:      ProviderAuthTypeOAuth,
+					OAuthProvider: OAuthProviderCodex,
+					OAuthRef:      "codex_acct_123",
+					Priority:      2,
+				},
+				{
+					Name:     "api-backup",
+					BaseURL:  "https://api.openai.com",
+					APIKey:   "sk-test",
+					Priority: 1,
+				},
+			},
+		},
+		Claude: ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
+	}
+
+	applyClientDefaults(&cfg.OpenAI)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected validation success, got: %v", err)
+	}
+	if got := cfg.OpenAI.Providers[0].NormalizedAuthType(); got != ProviderAuthTypeOAuth {
+		t.Fatalf("auth_type = %q, want %q", got, ProviderAuthTypeOAuth)
+	}
+	if got := cfg.OpenAI.Providers[0].NormalizedOAuthProvider(); got != OAuthProviderCodex {
+		t.Fatalf("oauth_provider = %q, want %q", got, OAuthProviderCodex)
+	}
+}
+
+func TestValidate_ProviderOAuthRejectsMixedCredentialSources(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Global: DefaultGlobalConfig(),
+		OpenAI: ClientConfig{
+			Mode: ClientModeAuto,
+			Providers: []Provider{
+				{
+					Name:          "mixed",
+					BaseURL:       "https://api.openai.com",
+					APIKey:        "sk-test",
+					AuthType:      ProviderAuthTypeOAuth,
+					OAuthProvider: OAuthProviderCodex,
+					OAuthRef:      "codex_acct_123",
+					Priority:      1,
+				},
+			},
+		},
+		Claude: ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
+	}
+
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "cannot be set when auth_type=oauth") {
+		t.Fatalf("err = %v, want mixed credential source validation error", err)
+	}
+}
+
+func TestValidate_ProviderOAuthRejectsMissingOAuthRef(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Global: DefaultGlobalConfig(),
+		OpenAI: ClientConfig{
+			Mode: ClientModeAuto,
+			Providers: []Provider{
+				{
+					Name:          "missing-ref",
+					AuthType:      ProviderAuthTypeOAuth,
+					OAuthProvider: OAuthProviderCodex,
+					Priority:      1,
+				},
+			},
+		},
+		Claude: ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
+	}
+
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "oauth_ref is required") {
+		t.Fatalf("err = %v, want oauth_ref validation error", err)
+	}
+}
+
+func TestValidate_ProviderOAuthRejectsBaseURL(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Global: DefaultGlobalConfig(),
+		OpenAI: ClientConfig{
+			Mode: ClientModeAuto,
+			Providers: []Provider{
+				{
+					Name:          "codex-oauth",
+					BaseURL:       "https://chatgpt.com/backend-api/codex",
+					AuthType:      ProviderAuthTypeOAuth,
+					OAuthProvider: OAuthProviderCodex,
+					OAuthRef:      "codex_acct_123",
+					Priority:      1,
+				},
+			},
+		},
+		Claude: ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
+	}
+
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "base_url is not allowed") {
+		t.Fatalf("err = %v, want base_url rejection for oauth provider", err)
+	}
+}
+
+func TestValidate_ProviderOAuthRejectsUnsupportedClient(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Global: DefaultGlobalConfig(),
+		Claude: ClientConfig{
+			Mode: ClientModeAuto,
+			Providers: []Provider{
+				{
+					Name:          "claude-codex-oauth",
+					AuthType:      ProviderAuthTypeOAuth,
+					OAuthProvider: OAuthProviderCodex,
+					OAuthRef:      "codex_acct_123",
+					Priority:      1,
+				},
+			},
+		},
+		OpenAI: ClientConfig{Mode: ClientModeAuto},
+		Gemini: ClientConfig{Mode: ClientModeAuto},
+	}
+
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), `only supported for openai client`) {
+		t.Fatalf("err = %v, want unsupported oauth client validation error", err)
+	}
+}
+
 func TestValidate_ProviderThinkingBudgetRejectsNegative(t *testing.T) {
 	t.Parallel()
 

@@ -127,6 +127,21 @@ type ProviderOverrides struct {
 	Claude *ClaudeOverrides `yaml:"claude,omitempty"`
 }
 
+type ProviderAuthType string
+
+const (
+	ProviderAuthTypeAPIKey ProviderAuthType = "api_key"
+	ProviderAuthTypeOAuth  ProviderAuthType = "oauth"
+)
+
+type OAuthProvider string
+
+const (
+	OAuthProviderCodex  OAuthProvider = "codex"
+	OAuthProviderGemini OAuthProvider = "gemini"
+	OAuthProviderClaude OAuthProvider = "claude"
+)
+
 type OpenAIOverrides struct {
 	ReasoningEffort *string `yaml:"reasoning_effort,omitempty"`
 }
@@ -166,6 +181,9 @@ type providerYAML struct {
 	BaseURL              string             `yaml:"base_url"`
 	APIKey               string             `yaml:"api_key,omitempty"`
 	APIKeys              []string           `yaml:"api_keys,omitempty"`
+	AuthType             ProviderAuthType   `yaml:"auth_type,omitempty"`
+	OAuthProvider        OAuthProvider      `yaml:"oauth_provider,omitempty"`
+	OAuthRef             string             `yaml:"oauth_ref,omitempty"`
 	ProxyMode            ProviderProxyMode  `yaml:"proxy_mode,omitempty"`
 	ProxyURL             string             `yaml:"proxy_url,omitempty"`
 	Priority             int                `yaml:"priority"`
@@ -178,15 +196,18 @@ type providerYAML struct {
 
 // Provider represents an API provider configuration
 type Provider struct {
-	Name      string             `yaml:"name"`
-	BaseURL   string             `yaml:"base_url"`
-	APIKey    string             `yaml:"api_key,omitempty"`
-	APIKeys   []string           `yaml:"api_keys,omitempty"`
-	ProxyMode ProviderProxyMode  `yaml:"proxy_mode,omitempty"`
-	ProxyURL  string             `yaml:"proxy_url,omitempty"`
-	Priority  int                `yaml:"priority"`
-	Enabled   *bool              `yaml:"enabled,omitempty"`
-	Overrides *ProviderOverrides `yaml:"-"`
+	Name          string             `yaml:"name"`
+	BaseURL       string             `yaml:"base_url"`
+	APIKey        string             `yaml:"api_key,omitempty"`
+	APIKeys       []string           `yaml:"api_keys,omitempty"`
+	AuthType      ProviderAuthType   `yaml:"auth_type,omitempty"`
+	OAuthProvider OAuthProvider      `yaml:"oauth_provider,omitempty"`
+	OAuthRef      string             `yaml:"oauth_ref,omitempty"`
+	ProxyMode     ProviderProxyMode  `yaml:"proxy_mode,omitempty"`
+	ProxyURL      string             `yaml:"proxy_url,omitempty"`
+	Priority      int                `yaml:"priority"`
+	Enabled       *bool              `yaml:"enabled,omitempty"`
+	Overrides     *ProviderOverrides `yaml:"-"`
 }
 
 func (p *Provider) UnmarshalYAML(value *yaml.Node) error {
@@ -218,23 +239,35 @@ func (p *Provider) UnmarshalYAML(value *yaml.Node) error {
 		}
 	}
 	*p = Provider{
-		Name:      raw.Name,
-		BaseURL:   raw.BaseURL,
-		APIKey:    raw.APIKey,
-		APIKeys:   append([]string(nil), raw.APIKeys...),
-		ProxyMode: raw.ProxyMode,
-		ProxyURL:  raw.ProxyURL,
-		Priority:  raw.Priority,
-		Enabled:   raw.Enabled,
-		Overrides: NormalizeProviderOverrides(overrides),
+		Name:          raw.Name,
+		BaseURL:       raw.BaseURL,
+		APIKey:        raw.APIKey,
+		APIKeys:       append([]string(nil), raw.APIKeys...),
+		AuthType:      raw.AuthType,
+		OAuthProvider: raw.OAuthProvider,
+		OAuthRef:      raw.OAuthRef,
+		ProxyMode:     raw.ProxyMode,
+		ProxyURL:      raw.ProxyURL,
+		Priority:      raw.Priority,
+		Enabled:       raw.Enabled,
+		Overrides:     NormalizeProviderOverrides(overrides),
 	}
+	NormalizeProviderAuthSettings(p)
 	NormalizeProviderProxySettings(p)
 	return nil
 }
 
 func (p Provider) MarshalYAML() (any, error) {
+	authType := p.NormalizedAuthType()
 	proxyMode := p.NormalizedProxyMode()
 	proxyURL := p.NormalizedProxyURL()
+	oauthProvider := p.NormalizedOAuthProvider()
+	oauthRef := p.NormalizedOAuthRef()
+	if authType == ProviderAuthTypeAPIKey {
+		authType = ""
+		oauthProvider = ""
+		oauthRef = ""
+	}
 	if proxyMode == ProviderProxyModeDefault {
 		proxyMode = ""
 	}
@@ -242,15 +275,18 @@ func (p Provider) MarshalYAML() (any, error) {
 		proxyURL = ""
 	}
 	return providerYAML{
-		Name:      p.Name,
-		BaseURL:   p.BaseURL,
-		APIKey:    p.APIKey,
-		APIKeys:   append([]string(nil), p.APIKeys...),
-		ProxyMode: proxyMode,
-		ProxyURL:  proxyURL,
-		Priority:  p.Priority,
-		Enabled:   p.Enabled,
-		Overrides: NormalizeProviderOverrides(p.Overrides),
+		Name:          p.Name,
+		BaseURL:       p.BaseURL,
+		APIKey:        p.APIKey,
+		APIKeys:       append([]string(nil), p.APIKeys...),
+		AuthType:      authType,
+		OAuthProvider: oauthProvider,
+		OAuthRef:      oauthRef,
+		ProxyMode:     proxyMode,
+		ProxyURL:      proxyURL,
+		Priority:      p.Priority,
+		Enabled:       p.Enabled,
+		Overrides:     NormalizeProviderOverrides(p.Overrides),
 	}, nil
 }
 
@@ -306,6 +342,15 @@ func NormalizeProviderOverrides(overrides *ProviderOverrides) *ProviderOverrides
 		return nil
 	}
 	return &normalized
+}
+
+func NormalizeProviderAuthSettings(provider *Provider) {
+	if provider == nil {
+		return
+	}
+	provider.AuthType = provider.NormalizedAuthType()
+	provider.OAuthProvider = provider.NormalizedOAuthProvider()
+	provider.OAuthRef = provider.NormalizedOAuthRef()
 }
 
 func NormalizeProviderProxySettings(provider *Provider) {
@@ -370,6 +415,26 @@ func (p Provider) NormalizedProxyMode() ProviderProxyMode {
 		return ProviderProxyModeDefault
 	}
 	return ProviderProxyMode(mode)
+}
+
+func (p Provider) NormalizedAuthType() ProviderAuthType {
+	authType := strings.ToLower(strings.TrimSpace(string(p.AuthType)))
+	if authType == "" {
+		return ProviderAuthTypeAPIKey
+	}
+	return ProviderAuthType(authType)
+}
+
+func (p Provider) NormalizedOAuthProvider() OAuthProvider {
+	return OAuthProvider(strings.ToLower(strings.TrimSpace(string(p.OAuthProvider))))
+}
+
+func (p Provider) NormalizedOAuthRef() string {
+	return strings.TrimSpace(p.OAuthRef)
+}
+
+func (p Provider) UsesOAuth() bool {
+	return p.NormalizedAuthType() == ProviderAuthTypeOAuth
 }
 
 func (p Provider) NormalizedProxyURL() string {
@@ -869,8 +934,10 @@ func applyClientDefaults(cc *ClientConfig) {
 		if cc.Providers[i].Priority == 0 {
 			cc.Providers[i].Priority = 1
 		}
+		cc.Providers[i].BaseURL = strings.TrimSpace(cc.Providers[i].BaseURL)
 		cc.Providers[i].APIKey = strings.TrimSpace(cc.Providers[i].APIKey)
 		cc.Providers[i].APIKeys = cc.Providers[i].NormalizedAPIKeys()
+		NormalizeProviderAuthSettings(&cc.Providers[i])
 		NormalizeProviderProxySettings(&cc.Providers[i])
 		cc.Providers[i].Overrides = NormalizeProviderOverrides(cc.Providers[i].Overrides)
 		if len(cc.Providers[i].APIKeys) == 1 {
@@ -1070,14 +1137,46 @@ func validateProviders(clientName string, providers []Provider) error {
 			return fmt.Errorf("%s: duplicate provider name %q at positions %d and %d", clientName, p.Name, firstIdx+1, i+1)
 		}
 		seenNames[p.Name] = i
-		if p.BaseURL == "" {
-			return fmt.Errorf("%s provider %s: base_url is required", clientName, p.Name)
+		switch p.NormalizedAuthType() {
+		case ProviderAuthTypeAPIKey, ProviderAuthTypeOAuth:
+			// ok
+		default:
+			return fmt.Errorf("%s provider %s: auth_type must be one of %q or %q", clientName, p.Name, ProviderAuthTypeAPIKey, ProviderAuthTypeOAuth)
 		}
 		if strings.TrimSpace(p.APIKey) != "" && len(p.APIKeys) > 0 {
 			return fmt.Errorf("%s provider %s: api_key and api_keys cannot both be set", clientName, p.Name)
 		}
-		if len(p.NormalizedAPIKeys()) == 0 {
-			return fmt.Errorf("%s provider %s: api_key or api_keys is required", clientName, p.Name)
+		if p.UsesOAuth() {
+			if len(p.NormalizedAPIKeys()) > 0 {
+				return fmt.Errorf("%s provider %s: api_key and api_keys cannot be set when auth_type=oauth", clientName, p.Name)
+			}
+			if p.NormalizedOAuthProvider() == "" {
+				return fmt.Errorf("%s provider %s: oauth_provider is required when auth_type=oauth", clientName, p.Name)
+			}
+			if p.NormalizedOAuthRef() == "" {
+				return fmt.Errorf("%s provider %s: oauth_ref is required when auth_type=oauth", clientName, p.Name)
+			}
+			if strings.TrimSpace(p.BaseURL) != "" {
+				return fmt.Errorf("%s provider %s: base_url is not allowed when auth_type=oauth", clientName, p.Name)
+			}
+			switch p.NormalizedOAuthProvider() {
+			case OAuthProviderCodex:
+				if clientName != "openai" {
+					return fmt.Errorf("%s provider %s: oauth_provider %q is only supported for openai client", clientName, p.Name, OAuthProviderCodex)
+				}
+			default:
+				return fmt.Errorf("%s provider %s: unsupported oauth_provider %q", clientName, p.Name, p.NormalizedOAuthProvider())
+			}
+		} else {
+			if p.BaseURL == "" {
+				return fmt.Errorf("%s provider %s: base_url is required", clientName, p.Name)
+			}
+			if len(p.NormalizedAPIKeys()) == 0 {
+				return fmt.Errorf("%s provider %s: api_key or api_keys is required", clientName, p.Name)
+			}
+			if p.NormalizedOAuthProvider() != "" || p.NormalizedOAuthRef() != "" {
+				return fmt.Errorf("%s provider %s: oauth_provider and oauth_ref require auth_type=oauth", clientName, p.Name)
+			}
 		}
 		if p.Priority < 1 {
 			return fmt.Errorf("%s provider %s: priority must be >= 1", clientName, p.Name)

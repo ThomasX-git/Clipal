@@ -181,7 +181,12 @@
                                 <div class="provider-card__title-row">
                                     <span class="priority-badge badge badge-xs badge-outline badge-mono"
                                         x-text="'#' + provider.priority"></span>
-                                    <h3 class="provider-name provider-card__title" x-text="provider.name"></h3>
+                                    <h3 class="provider-name provider-card__title"
+                                        :title="providerDisplayName(provider)"
+                                        x-text="providerCardTitle(provider)"></h3>
+                                    <span class="pill pill--xs pill--neutral pill--mono"
+                                        x-show="!providerUsesOAuth(provider) && provider.display_name && provider.display_name !== provider.name"
+                                        x-text="provider.name"></span>
                                     <template
                                         x-if="clientConfig.mode === 'manual' && provider.name === clientConfig.pinned_provider">
                                         <span class="pin-badge badge badge-xs badge-warning"
@@ -204,13 +209,28 @@
                                     :class="{'pin-active': clientConfig.mode === 'manual' && provider.name === clientConfig.pinned_provider}"
                                     :title="providerPinTitle(provider)" :disabled="!provider.enabled">📌</button>
                                 <button @click="editProvider(provider)" class="icon-btn"
-                                    :title="t('providers.edit')">✏️</button>
-                                <button @click="deleteProvider(provider.name)" class="icon-btn danger"
+                                    :title="providerEditTitle(provider)" :disabled="providerUsesOAuth(provider)">✏️</button>
+                                <button @click="deleteProvider(provider)" class="icon-btn danger"
                                     :title="t('providers.delete')">🗑️</button>
                             </div>
                         </div>
-                        <div class="provider-card__details">
-                            <div class="provider-card__detail">
+                        <div class="provider-card__details" x-show="providerHasVisibleDetails(provider)">
+                            <div class="provider-card__detail" x-show="providerUsesOAuth(provider)">
+                                <span class="provider-card__detail-label" x-text="t('providers.service')"></span>
+                                <span class="provider-card__detail-value"
+                                    x-text="oauthProviderLabel(provider.oauth_provider)"></span>
+                            </div>
+                            <div class="provider-card__detail" x-show="providerUsesOAuth(provider)">
+                                <span class="provider-card__detail-label" x-text="t('providers.oauthAuth')"></span>
+                                <span class="pill pill--xs" :class="providerOAuthAuthStatusClass(provider)"
+                                    x-text="providerOAuthAuthStatusLabel(provider)"></span>
+                            </div>
+                            <div class="provider-card__detail" x-show="providerUsesOAuth(provider)">
+                                <span class="provider-card__detail-label" x-text="t('providers.refresh')"></span>
+                                <span class="provider-card__detail-value"
+                                    x-text="providerOAuthRefreshSummary(provider)"></span>
+                            </div>
+                            <div class="provider-card__detail" x-show="provider.base_url">
                                 <span class="provider-card__detail-label" x-text="t('providers.baseUrl')"></span>
                                 <span class="provider-card__detail-value" x-text="provider.base_url"></span>
                             </div>
@@ -219,7 +239,7 @@
                                 <span class="provider-card__detail-label" x-text="t('providers.proxy')"></span>
                                 <span class="provider-card__detail-value" x-text="providerProxySummary(provider)"></span>
                             </div>
-                            <div class="provider-card__detail">
+                            <div class="provider-card__detail" x-show="!providerUsesOAuth(provider)">
                                 <span class="provider-card__detail-label" x-text="t('providers.apiKeys')"></span>
                                 <span class="provider-card__detail-value"
                                     x-text="configuredKeyCountLabel(provider.key_count || 0)"></span>
@@ -843,16 +863,52 @@
             </div>
             <form @submit.prevent="saveProvider()">
                 <div class="modal-body form-horizontal-grid">
-                    <label class="form-label" x-text="t('modal.provider.name')"></label>
-                    <div class="form-control-wrap">
-                        <input type="text" x-model="providerForm.name" class="form-input" required
+                    <div class="form-grid-full form-control-wrap" x-show="!showEditProviderModal">
+                        <div class="segmented-group" role="tablist" :aria-label="t('modal.provider.credentialSource')">
+                            <button type="button" class="segment-btn" role="tab"
+                                :class="{'active': !providerFormUsesOAuth()}" :aria-selected="!providerFormUsesOAuth()"
+                                @click="setProviderAuthType('api_key')"
+                                x-text="t('modal.provider.credentialSourceApiKey')"></button>
+                            <template x-if="hasOAuthProviders()">
+                                <button type="button" class="segment-btn" role="tab"
+                                    :class="{'active': providerFormUsesOAuth()}" :aria-selected="providerFormUsesOAuth()"
+                                    @click="setProviderAuthType('oauth')"
+                                    x-text="t('modal.provider.credentialSourceOAuth')"></button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <label class="form-label" x-show="providerFormUsesOAuth() && !showEditProviderModal"
+                        x-text="t('modal.provider.oauthProvider')"></label>
+                    <div class="form-control-wrap" x-show="providerFormUsesOAuth() && !showEditProviderModal">
+                        <select x-model="providerForm.oauth_provider" class="form-select">
+                            <template x-for="item in oauthProviders" :key="item.provider">
+                                <option :value="item.provider" x-text="oauthProviderLabel(item.provider)"></option>
+                            </template>
+                        </select>
+                        <div class="form-hint" x-text="t('modal.provider.oauthDirectHint')"></div>
+                        <div class="form-meta" style="margin-top: 10px; align-items: center; gap: 10px;">
+                            <button type="button" class="btn btn-secondary btn-sm" @click="triggerOAuthImportPicker()"
+                                x-text="t('modal.provider.importDirectory')"></button>
+                            <input x-ref="oauthImportInput" type="file" style="display: none;" webkitdirectory directory
+                                multiple @change="handleOAuthImportSelection($event)">
+                            <span class="form-hint" style="margin: 0;"
+                                x-text="t('modal.provider.importDirectoryHint')"></span>
+                        </div>
+                    </div>
+
+                    <label class="form-label" x-show="!providerFormUsesOAuth()" x-text="t('modal.provider.name')"></label>
+                    <div class="form-control-wrap" x-show="!providerFormUsesOAuth()">
+                        <input type="text" x-model="providerForm.name" class="form-input"
+                            :required="!providerFormUsesOAuth()"
                             placeholder="e.g. provider-primary">
                         <div class="form-hint" style="font-size: 11px;" x-text="t('modal.provider.nameHint')"></div>
                     </div>
 
-                    <label class="form-label" x-text="t('modal.provider.baseUrl')"></label>
-                    <div class="form-control-wrap">
-                        <input type="text" x-model="providerForm.base_url" class="form-input" required
+                    <label class="form-label" x-show="!providerFormUsesOAuth()" x-text="t('modal.provider.baseUrl')"></label>
+                    <div class="form-control-wrap" x-show="!providerFormUsesOAuth()">
+                        <input type="text" x-model="providerForm.base_url" class="form-input"
+                            :required="!providerFormUsesOAuth()"
                             placeholder="https://api.example.com">
                     </div>
 
@@ -876,11 +932,11 @@
                             x-text="providerEditProxyHint()"></div>
                     </div>
 
-                    <label class="form-label"
+                    <label class="form-label" x-show="!providerFormUsesOAuth()"
                         x-text="showEditProviderModal ? t('modal.provider.apiKeys') : t('modal.provider.apiKeysRequired')"></label>
-                    <div class="form-control-wrap">
+                    <div class="form-control-wrap" x-show="!providerFormUsesOAuth()">
                         <textarea x-model="providerForm.api_keys_text" class="form-input form-textarea" rows="4"
-                            :required="!showEditProviderModal"
+                            :required="!showEditProviderModal && !providerFormUsesOAuth()"
                             :placeholder="t('modal.provider.onePerLine') + '\n\nsk-xxx\nsk-yyy'"></textarea>
                         <div class="form-meta"
                             style="opacity: 0.85; margin-top: 4px; flex-wrap: nowrap; overflow: auto; padding-bottom: 4px;">
@@ -945,7 +1001,7 @@
                 <div class="modal-footer">
                     <button type="button" @click="closeModals()" class="btn btn-secondary"
                         x-text="t('common.cancel')"></button>
-                    <button type="submit" class="btn btn-primary" x-text="t('modal.provider.saveProvider')"></button>
+                    <button type="submit" class="btn btn-primary" x-text="providerModalSaveLabel()"></button>
                 </div>
             </form>
         </div>

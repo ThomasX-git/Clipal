@@ -50,6 +50,8 @@ providers:
     enabled: true
 ```
 
+OAuth-backed providers are also supported in `openai.yaml` for phase 1. The recommended path is to create them from the Web UI authorization flow instead of typing them by hand.
+
 ## Global Config `config.yaml`
 
 | Field | Type | Default | Notes |
@@ -178,9 +180,12 @@ providers:
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `name` | string | yes | Provider name |
-| `base_url` | string | yes | Upstream API base URL |
-| `api_key` | string | one of two | Single API key |
-| `api_keys` | array | one of two | Multiple API keys, used in order |
+| `auth_type` | string | no | `api_key` by default; set `oauth` for OAuth-backed providers |
+| `base_url` | string | API-key only | Upstream API base URL; not allowed for phase-1 OAuth providers |
+| `api_key` | string | API-key only | Single API key |
+| `api_keys` | array | API-key only | Multiple API keys, used in order |
+| `oauth_provider` | string | OAuth only | Phase 1 supports only `codex`, and only in `openai.yaml` |
+| `oauth_ref` | string | OAuth only | Reference to the locally stored OAuth credential |
 | `proxy_mode` | string | no | Upstream proxy mode for this provider; `default` follows the global default |
 | `proxy_url` | string | no | Required when `proxy_mode: custom`; supports `http://`, `https://`, `socks5://`, and `socks5h://` proxy URLs |
 | `priority` | int | no | Lower number = higher priority; omitted or `0` is treated as `1` |
@@ -188,6 +193,18 @@ providers:
 | `model` | string | no | Force this provider to use a specific upstream model name for supported OpenAI and Claude requests |
 | `reasoning_effort` | string | no | OpenAI only. For `/v1/responses*`, Clipal writes `reasoning.effort`; for chat/completions it only replaces an existing `reasoning_effort` field |
 | `thinking_budget_tokens` | int | no | Claude only. Clipal writes `thinking = {type: "enabled", budget_tokens: ...}` on supported requests |
+
+### OAuth Providers
+
+Phase 1 keeps OAuth providers in the same `providers[]` list as API-key providers. They participate in the same ordering, pinning, enable/disable, and failover behavior.
+
+- Supported today: `openai.yaml` with `auth_type: oauth` and `oauth_provider: codex`
+- Current protocol scope: OpenAI `/v1/responses*` only
+- Do not set `base_url`, `api_key`, or `api_keys` on an OAuth provider
+- Create OAuth providers from the Web UI by choosing `Add Provider -> OAuth -> Codex`
+- The backend generates the internal provider `name` from the authorized email; the UI shows the email as the display label
+- OAuth credentials are stored outside YAML under `~/.clipal/oauth/codex/<email>--<oauth_ref>.json`
+- Existing OAuth providers can be reordered, pinned, enabled, or disabled like normal providers, but credential edits go through re-authorization instead of the generic edit form
 
 ## Practical Defaults
 

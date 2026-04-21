@@ -18,6 +18,7 @@ import (
 	"github.com/lansespirit/Clipal/internal/config"
 	"github.com/lansespirit/Clipal/internal/logger"
 	"github.com/lansespirit/Clipal/internal/notify"
+	oauthpkg "github.com/lansespirit/Clipal/internal/oauth"
 	"github.com/lansespirit/Clipal/internal/telemetry"
 )
 
@@ -112,6 +113,7 @@ type Router struct {
 	cfg        *config.Config
 	configDir  string
 	telemetry  *telemetry.Store
+	oauth      *oauthpkg.Service
 	proxies    map[ClientType]*ClientProxy
 	server     *http.Server
 	mu         sync.RWMutex
@@ -174,6 +176,7 @@ type ClientProxy struct {
 	lastSwitch             ProviderSwitchEvent
 	lastRequest            RequestOutcomeEvent
 	telemetry              *telemetry.Store
+	oauth                  *oauthpkg.Service
 }
 
 // Close releases resources held by the ClientProxy.
@@ -212,6 +215,7 @@ func NewRouter(cfg *config.Config) *Router {
 		cfg:        cfg,
 		configDir:  cfg.ConfigDir(),
 		telemetry:  telemetryStore,
+		oauth:      oauthpkg.NewService(cfg.ConfigDir()),
 		proxies:    make(map[ClientType]*ClientProxy),
 		lastMod:    make(map[string]time.Time),
 		watchEvery: 5 * time.Second,
@@ -221,18 +225,21 @@ func NewRouter(cfg *config.Config) *Router {
 	claudeProviders := config.GetEnabledProviders(cfg.Claude)
 	if len(claudeProviders) > 0 {
 		r.proxies[ClientClaude] = newClientProxyWithGlobalProxy(ClientClaude, cfg.Claude.Mode, cfg.Claude.PinnedProvider, claudeProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.EffectiveUpstreamProxyIdentity(), telemetryStore)
+		r.proxies[ClientClaude].oauth = r.oauth
 		r.proxies[ClientClaude].applyRoutingRuntimeSettings(routingCfg)
 	}
 
 	codexProviders := config.GetEnabledProviders(cfg.OpenAI)
 	if len(codexProviders) > 0 {
 		r.proxies[ClientOpenAI] = newClientProxyWithGlobalProxy(ClientOpenAI, cfg.OpenAI.Mode, cfg.OpenAI.PinnedProvider, codexProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.EffectiveUpstreamProxyIdentity(), telemetryStore)
+		r.proxies[ClientOpenAI].oauth = r.oauth
 		r.proxies[ClientOpenAI].applyRoutingRuntimeSettings(routingCfg)
 	}
 
 	geminiProviders := config.GetEnabledProviders(cfg.Gemini)
 	if len(geminiProviders) > 0 {
 		r.proxies[ClientGemini] = newClientProxyWithGlobalProxy(ClientGemini, cfg.Gemini.Mode, cfg.Gemini.PinnedProvider, geminiProviders, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, cfg.Global.NormalizedUpstreamProxyMode(), cfg.Global.EffectiveUpstreamProxyIdentity(), telemetryStore)
+		r.proxies[ClientGemini].oauth = r.oauth
 		r.proxies[ClientGemini].applyRoutingRuntimeSettings(routingCfg)
 	}
 
@@ -714,12 +721,15 @@ func (r *Router) reloadProviderConfigsLocked() error {
 	newProxies := make(map[ClientType]*ClientProxy)
 	if ps := config.GetEnabledProviders(newCfg.Claude); len(ps) > 0 {
 		newProxies[ClientClaude] = newReloadedClientProxy(ClientClaude, newCfg.Claude.Mode, newCfg.Claude.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), globalProxyMode, globalProxyURL, oldProxies[ClientClaude], r.telemetry)
+		newProxies[ClientClaude].oauth = r.oauth
 	}
 	if ps := config.GetEnabledProviders(newCfg.OpenAI); len(ps) > 0 {
 		newProxies[ClientOpenAI] = newReloadedClientProxy(ClientOpenAI, newCfg.OpenAI.Mode, newCfg.OpenAI.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), globalProxyMode, globalProxyURL, oldProxies[ClientOpenAI], r.telemetry)
+		newProxies[ClientOpenAI].oauth = r.oauth
 	}
 	if ps := config.GetEnabledProviders(newCfg.Gemini); len(ps) > 0 {
 		newProxies[ClientGemini] = newReloadedClientProxy(ClientGemini, newCfg.Gemini.Mode, newCfg.Gemini.PinnedProvider, ps, durations.ReactivateAfter, durations.UpstreamIdleTimeout, durations.ResponseHeaderTimeout, cbCfg, routingRuntimeSettingsFromConfig(newCfg.Global.Routing), globalProxyMode, globalProxyURL, oldProxies[ClientGemini], r.telemetry)
+		newProxies[ClientGemini].oauth = r.oauth
 	}
 	r.reconcileTelemetryUsage(oldCfg, newCfg)
 
@@ -929,7 +939,10 @@ func inheritStickyRuntimeState(dst *ClientProxy, src *ClientProxy, indexMap map[
 
 func sameProviderRuntimeIdentity(a config.Provider, aPolicy upstreamProxyPolicyKey, b config.Provider, bPolicy upstreamProxyPolicyKey) bool {
 	return a.Name == b.Name &&
+		a.NormalizedAuthType() == b.NormalizedAuthType() &&
 		strings.TrimSpace(a.BaseURL) == strings.TrimSpace(b.BaseURL) &&
+		a.NormalizedOAuthProvider() == b.NormalizedOAuthProvider() &&
+		a.NormalizedOAuthRef() == b.NormalizedOAuthRef() &&
 		aPolicy == bPolicy
 }
 
@@ -1054,6 +1067,10 @@ func isClaudeCountTokensPath(path string) bool {
 
 // createProxyRequest creates a new request to forward to the provider
 func (cp *ClientProxy) createProxyRequest(original *http.Request, provider config.Provider, apiKey string, path string, body []byte) (*http.Request, error) {
+	if provider.UsesOAuth() {
+		return cp.createOAuthProxyRequest(original, provider, path, body)
+	}
+
 	targetURL, err := buildTargetURL(provider.BaseURL, path, original.URL.RawQuery)
 	if err != nil {
 		return nil, err
