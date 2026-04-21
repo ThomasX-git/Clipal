@@ -215,21 +215,6 @@
                             </div>
                         </div>
                         <div class="provider-card__details" x-show="providerHasVisibleDetails(provider)">
-                            <div class="provider-card__detail" x-show="providerUsesOAuth(provider)">
-                                <span class="provider-card__detail-label" x-text="t('providers.service')"></span>
-                                <span class="provider-card__detail-value"
-                                    x-text="oauthProviderLabel(provider.oauth_provider)"></span>
-                            </div>
-                            <div class="provider-card__detail" x-show="providerUsesOAuth(provider)">
-                                <span class="provider-card__detail-label" x-text="t('providers.oauthAuth')"></span>
-                                <span class="pill pill--xs" :class="providerOAuthAuthStatusClass(provider)"
-                                    x-text="providerOAuthAuthStatusLabel(provider)"></span>
-                            </div>
-                            <div class="provider-card__detail" x-show="providerUsesOAuth(provider)">
-                                <span class="provider-card__detail-label" x-text="t('providers.refresh')"></span>
-                                <span class="provider-card__detail-value"
-                                    x-text="providerOAuthRefreshSummary(provider)"></span>
-                            </div>
                             <div class="provider-card__detail" x-show="provider.base_url">
                                 <span class="provider-card__detail-label" x-text="t('providers.baseUrl')"></span>
                                 <span class="provider-card__detail-value" x-text="provider.base_url"></span>
@@ -911,7 +896,17 @@
                             :required="!providerFormUsesOAuth()"
                             placeholder="https://api.example.com">
                     </div>
-
+                    
+                    <label class="form-label" x-show="!providerFormUsesOAuth()"
+                    x-text="showEditProviderModal ? t('modal.provider.apiKeys') : t('modal.provider.apiKeysRequired')"></label>
+                    <div class="form-control-wrap" x-show="!providerFormUsesOAuth()">
+                        <textarea x-model="providerForm.api_keys_text" class="form-input form-textarea" rows="4"
+                        :required="!showEditProviderModal && !providerFormUsesOAuth()"
+                        :placeholder="t('modal.provider.onePerLine') + '\n\nsk-xxx\nsk-yyy'"></textarea>
+                    <div class="form-hint" x-show="showEditProviderModal && editingProviderKeyCount > 0"
+                        x-text="providerEditKeyHint()"></div>
+                    </div>
+                    
                     <label class="form-label" x-text="t('modal.provider.proxyMode')"></label>
                     <div class="form-control-wrap">
                         <select x-model="providerForm.proxy_mode" class="form-select">
@@ -930,25 +925,6 @@
                         <div class="form-hint"
                             x-show="showEditProviderModal && providerFormUsesCustomProxy() && providerForm.proxy_url_hint"
                             x-text="providerEditProxyHint()"></div>
-                    </div>
-
-                    <label class="form-label" x-show="!providerFormUsesOAuth()"
-                        x-text="showEditProviderModal ? t('modal.provider.apiKeys') : t('modal.provider.apiKeysRequired')"></label>
-                    <div class="form-control-wrap" x-show="!providerFormUsesOAuth()">
-                        <textarea x-model="providerForm.api_keys_text" class="form-input form-textarea" rows="4"
-                            :required="!showEditProviderModal && !providerFormUsesOAuth()"
-                            :placeholder="t('modal.provider.onePerLine') + '\n\nsk-xxx\nsk-yyy'"></textarea>
-                        <div class="form-meta"
-                            style="opacity: 0.85; margin-top: 4px; flex-wrap: nowrap; overflow: auto; padding-bottom: 4px;">
-                            <span class="form-meta-label" style="white-space: nowrap;"
-                                x-text="t('modal.provider.savedAs')"></span>
-                            <span class="pill pill--xs pill--neutral pill--mono"
-                                x-text="t('modal.provider.savedAsSingle')"></span>
-                            <span class="pill pill--xs pill--neutral pill--mono"
-                                x-text="t('modal.provider.savedAsMultiple')"></span>
-                        </div>
-                        <div class="form-hint" x-show="showEditProviderModal && editingProviderKeyCount > 0"
-                            x-text="providerEditKeyHint()"></div>
                     </div>
 
                     <div class="form-grid-full modal-form-grid" style="align-items: center;">
