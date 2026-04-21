@@ -5,8 +5,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -46,6 +48,81 @@ func TestSessionPollExpiresAutomatically(t *testing.T) {
 	}
 	if got.Status != LoginStatusExpired {
 		t.Fatalf("status = %q, want %q", got.Status, LoginStatusExpired)
+	}
+}
+
+func TestStartLogin_SupersedesExistingPendingSessionOnSameCallbackPort(t *testing.T) {
+	dir := t.TempDir()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+
+	svc := NewService(dir,
+		WithCodexClient(&CodexClient{
+			AuthURL:      "https://auth.openai.com/oauth/authorize",
+			TokenURL:     "https://auth.openai.com/oauth/token",
+			ClientID:     "test-client",
+			CallbackHost: "127.0.0.1",
+			CallbackPort: port,
+			CallbackPath: "/auth/callback",
+		}),
+	)
+
+	first, err := svc.StartLogin(config.OAuthProviderCodex)
+	if err != nil {
+		t.Fatalf("first StartLogin: %v", err)
+	}
+	second, err := svc.StartLogin(config.OAuthProviderCodex)
+	if err != nil {
+		t.Fatalf("second StartLogin: %v", err)
+	}
+	if first.ID == second.ID {
+		t.Fatalf("expected distinct session ids, got %q", first.ID)
+	}
+
+	got, err := svc.PollLogin(first.ID)
+	if err != nil {
+		t.Fatalf("PollLogin: %v", err)
+	}
+	if got.Status != LoginStatusError {
+		t.Fatalf("status = %q, want %q", got.Status, LoginStatusError)
+	}
+	if !strings.Contains(got.Error, "superseded") {
+		t.Fatalf("error = %q, want superseded message", got.Error)
+	}
+}
+
+func TestStartLogin_ReturnsFriendlyErrorWhenCallbackPortIsBusy(t *testing.T) {
+	dir := t.TempDir()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer func() {
+		_ = ln.Close()
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	svc := NewService(dir,
+		WithCodexClient(&CodexClient{
+			AuthURL:      "https://auth.openai.com/oauth/authorize",
+			TokenURL:     "https://auth.openai.com/oauth/token",
+			ClientID:     "test-client",
+			CallbackHost: "127.0.0.1",
+			CallbackPort: port,
+			CallbackPath: "/auth/callback",
+		}),
+	)
+
+	_, err = svc.StartLogin(config.OAuthProviderCodex)
+	if err == nil {
+		t.Fatalf("expected StartLogin to fail when callback port is busy")
+	}
+	if !strings.Contains(err.Error(), "callback port") {
+		t.Fatalf("error = %q, want friendly callback port message", err.Error())
 	}
 }
 
@@ -137,6 +214,37 @@ func TestRefreshIfNeededCoalescesConcurrentCallers(t *testing.T) {
 	}
 	if loaded.AccessToken != "access-2" {
 		t.Fatalf("stored access token = %q, want access-2", loaded.AccessToken)
+	}
+}
+
+func TestStartCallbackServer_CallbackPageClosesWithoutOpenerDependency(t *testing.T) {
+	server, redirectURI, err := startCallbackServer("127.0.0.1", 0, "/auth/callback")
+	if err != nil {
+		t.Fatalf("startCallbackServer: %v", err)
+	}
+	defer func() {
+		_ = server.Close()
+	}()
+
+	resp, err := http.Get(redirectURI + "?code=code-123&state=session-1")
+	if err != nil {
+		t.Fatalf("http.Get: %v", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("io.ReadAll: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.StatusCode, http.StatusOK, string(body))
+	}
+	if got := string(body); !strings.Contains(got, "window.close();") {
+		t.Fatalf("callback page = %q, want window.close()", got)
+	}
+	if got := string(body); strings.Contains(got, "window.opener") {
+		t.Fatalf("callback page = %q, did not expect opener dependency", got)
 	}
 }
 

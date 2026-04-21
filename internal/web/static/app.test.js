@@ -4,6 +4,24 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+function createPopupWindow() {
+    return {
+        closed: false,
+        close() {
+            this.closed = true;
+        },
+        location: {
+            href: 'about:blank',
+            assign(url) {
+                this.href = url;
+            },
+            replace(url) {
+                this.href = url;
+            }
+        }
+    };
+}
+
 function loadApp(options = {}) {
     const source = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
     const storage = new Map(Object.entries(options.localStorageData || {}));
@@ -45,8 +63,12 @@ function loadApp(options = {}) {
                     addEventListener() {}
                 };
             },
-            open() {
-                return {};
+            open(url) {
+                const popup = createPopupWindow();
+                if (url) {
+                    popup.location.href = url;
+                }
+                return popup;
             },
             location
         },
@@ -898,7 +920,87 @@ test('triggerOAuthImportPicker clicks the hidden input', () => {
     assert.equal(clicked, 1);
 });
 
-test('startOAuthProviderAuthorization stores pending session and redirects same-tab when popup is blocked', async () => {
+test('startOAuthProviderAuthorization opens the real auth URL in a new window and keeps Clipal on the current page', async () => {
+    const popup = createPopupWindow();
+    const state = loadApp({
+        context: {
+            window: {
+                open(url) {
+                    calls.push(`open:${url}`);
+                    popup.location.href = url || '';
+                    return popup;
+                }
+            }
+        }
+    });
+    const calls = [];
+    const resumed = [];
+    state.selectedClient = 'openai';
+    state.providerForm = {
+        ...state.providerForm,
+        auth_type: 'oauth',
+        oauth_provider: 'codex'
+    };
+    state.apiCall = async (url, options) => {
+        calls.push(url);
+        assert.equal(state.__context.window.location.href, 'http://localhost/');
+        assert.deepEqual(JSON.parse(options.body), {
+            client_type: 'openai',
+            provider: 'codex'
+        });
+        return {
+            session_id: 'sess-popup',
+            provider: 'codex',
+            auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb',
+            expires_at: '2099-04-21T13:00:00Z'
+        };
+    };
+    state.resumePendingOAuthSession = async (pending, options) => {
+        resumed.push({ pending, options });
+        return null;
+    };
+    state.showAlert = () => {};
+
+    await state.startOAuthProviderAuthorization();
+
+    assert.deepEqual(calls, [
+        '/api/oauth/providers/start',
+        'open:https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
+    ]);
+    assert.equal(
+        popup.location.href,
+        'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
+    );
+    assert.equal(state.__context.window.location.href, 'http://localhost/');
+    assert.deepEqual(JSON.parse(state.__context.localStorage.getItem('clipal.pendingOAuthSession')), {
+        session_id: 'sess-popup',
+        provider: 'codex',
+        client_type: 'openai',
+        started_at: JSON.parse(state.__context.localStorage.getItem('clipal.pendingOAuthSession')).started_at,
+        expires_at: '2099-04-21T13:00:00Z',
+        auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
+    });
+    assert.equal(state.oauthAuthorization.phase, 'waiting');
+    assert.equal(state.oauthAuthorization.popup_blocked, false);
+    assert.deepEqual(JSON.parse(JSON.stringify(resumed)), [
+        {
+            pending: {
+                session_id: 'sess-popup',
+                provider: 'codex',
+                client_type: 'openai',
+                started_at: resumed[0].pending.started_at,
+                expires_at: '2099-04-21T13:00:00Z',
+                auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
+            },
+            options: {
+                showError: false,
+                phase: 'waiting'
+            }
+        }
+    ]);
+});
+
+test('startOAuthProviderAuthorization keeps waiting state in Clipal when popup is blocked', async () => {
     const state = loadApp({
         context: {
             window: {
@@ -908,46 +1010,47 @@ test('startOAuthProviderAuthorization stores pending session and redirects same-
             }
         }
     });
-    const calls = [];
+    const resumed = [];
     state.selectedClient = 'openai';
     state.providerForm = {
         ...state.providerForm,
         auth_type: 'oauth',
         oauth_provider: 'codex'
     };
-    state.apiCall = async (url, options) => {
-        calls.push({ url, options: JSON.parse(options.body) });
-        return {
-            session_id: 'sess-redirect',
-            provider: 'codex',
-            auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
-        };
+    state.apiCall = async () => ({
+        session_id: 'sess-blocked',
+        provider: 'codex',
+        auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb',
+        expires_at: '2099-04-21T13:05:00Z'
+    });
+    state.resumePendingOAuthSession = async (pending, options) => {
+        resumed.push({ pending, options });
+        return null;
     };
+    state.showAlert = () => {};
 
     await state.startOAuthProviderAuthorization();
 
-    assert.deepEqual(calls, [
+    assert.equal(state.__context.window.location.href, 'http://localhost/');
+    assert.equal(state.oauthAuthorization.phase, 'blocked');
+    assert.equal(state.oauthAuthorization.popup_blocked, true);
+    assert.equal(state.showAddProviderModal, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(resumed)), [
         {
-            url: '/api/oauth/providers/start',
-            options: {
+            pending: {
+                session_id: 'sess-blocked',
+                provider: 'codex',
                 client_type: 'openai',
-                provider: 'codex'
+                started_at: resumed[0].pending.started_at,
+                expires_at: '2099-04-21T13:05:00Z',
+                auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
+            },
+            options: {
+                showError: false,
+                phase: 'blocked'
             }
         }
     ]);
-    assert.equal(
-        state.__context.window.location.href,
-        'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
-    );
-    assert.deepEqual(
-        JSON.parse(state.__context.localStorage.getItem('clipal.pendingOAuthSession')),
-        {
-            session_id: 'sess-redirect',
-            provider: 'codex',
-            client_type: 'openai',
-            started_at: JSON.parse(state.__context.localStorage.getItem('clipal.pendingOAuthSession')).started_at
-        }
-    );
 });
 
 test('resumePendingOAuthSession completes stored session and clears pending storage', async () => {
@@ -957,7 +1060,9 @@ test('resumePendingOAuthSession completes stored session and clears pending stor
                 session_id: 'sess-1',
                 provider: 'codex',
                 client_type: 'openai',
-                started_at: 1710000000000
+                started_at: 1710000000000,
+                expires_at: '2099-04-21T13:00:00Z',
+                auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
             })
         }
     });
@@ -998,6 +1103,79 @@ test('resumePendingOAuthSession completes stored session and clears pending stor
     assert.equal(alerts[0][0], 'success');
 });
 
+test('resumePendingOAuthSession does not downgrade a completed OAuth session when popup state becomes cross-origin', async () => {
+    const popup = createPopupWindow();
+    const state = loadApp({
+        localStorageData: {
+            'clipal.pendingOAuthSession': JSON.stringify({
+                session_id: 'sess-success',
+                provider: 'codex',
+                client_type: 'openai',
+                started_at: 1710000000000,
+                expires_at: '2099-04-21T13:00:00Z',
+                auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
+            })
+        },
+        context: {
+            window: {
+                open() {
+                    return popup;
+                }
+            }
+        }
+    });
+    const alerts = [];
+    let loadProvidersCalls = 0;
+    let refreshStatusCalls = 0;
+    state.showAddProviderModal = true;
+    state.providerForm = {
+        ...state.providerForm,
+        auth_type: 'oauth',
+        oauth_provider: 'codex'
+    };
+    const pending = state.loadPendingOAuthSession();
+    state.applyOAuthAuthorizationState(pending, {
+        phase: 'waiting'
+    });
+    state.openOAuthAuthorizationPopup(pending.auth_url);
+    Object.defineProperty(state, 'oauthAuthorizationPopup', {
+        configurable: true,
+        get() {
+            throw new Error("Failed to read a named property '__v_isRef' from 'Window': An attempt was made to break through the security policy of the user agent.");
+        },
+        set() {
+            throw new Error("Failed to read a named property '__v_isRef' from 'Window': An attempt was made to break through the security policy of the user agent.");
+        }
+    });
+    state.apiCall = async url => {
+        assert.equal(url, '/api/oauth/sessions/sess-success');
+        return {
+            status: 'completed',
+            provider: 'codex',
+            provider_name: 'codex-sean-example-com',
+            display_name: 'sean@example.com'
+        };
+    };
+    state.showAlert = (...args) => alerts.push(args);
+    state.loadProviders = async () => {
+        loadProvidersCalls++;
+    };
+    state.refreshStatus = async () => {
+        refreshStatusCalls++;
+    };
+
+    await state.resumePendingOAuthSession();
+
+    assert.equal(state.showAddProviderModal, false);
+    assert.equal(state.oauthAuthorization.phase, 'idle');
+    assert.equal(state.__context.localStorage.getItem('clipal.pendingOAuthSession'), null);
+    assert.equal(popup.closed, true);
+    assert.equal(loadProvidersCalls, 1);
+    assert.equal(refreshStatusCalls, 1);
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0][0], 'success');
+});
+
 test('init selects pending OAuth target client and resumes polling after initial load', async () => {
     const state = loadApp({
         localStorageData: {
@@ -1005,7 +1183,9 @@ test('init selects pending OAuth target client and resumes polling after initial
                 session_id: 'sess-init',
                 provider: 'codex',
                 client_type: 'openai',
-                started_at: 1710000000000
+                started_at: 1710000000000,
+                expires_at: '2099-04-21T13:00:00Z',
+                auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
             })
         }
     });
@@ -1029,9 +1209,52 @@ test('init selects pending OAuth target client and resumes polling after initial
             session_id: 'sess-init',
             provider: 'codex',
             client_type: 'openai',
-            started_at: 1710000000000
+            started_at: 1710000000000,
+            expires_at: '2099-04-21T13:00:00Z',
+            auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
         }
     ]);
+});
+
+test('cancelOAuthAuthorization clears pending state and keeps add modal open', () => {
+    const popup = createPopupWindow();
+    const state = loadApp({
+        localStorageData: {
+            'clipal.pendingOAuthSession': JSON.stringify({
+                session_id: 'sess-cancel',
+                provider: 'codex',
+                client_type: 'openai',
+                started_at: 1710000000000,
+                expires_at: '2099-04-21T13:00:00Z',
+                auth_url: 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcb'
+            })
+        }
+        ,
+        context: {
+            window: {
+                open() {
+                    return popup;
+                }
+            }
+        }
+    });
+    state.showAddProviderModal = true;
+    state.providerForm = {
+        ...state.providerForm,
+        auth_type: 'oauth',
+        oauth_provider: 'codex'
+    };
+    state.applyOAuthAuthorizationState(state.loadPendingOAuthSession(), {
+        phase: 'waiting'
+    });
+    state.openOAuthAuthorizationPopup('https://auth.openai.com/oauth/authorize');
+
+    state.cancelOAuthAuthorization();
+
+    assert.equal(state.showAddProviderModal, true);
+    assert.equal(state.oauthAuthorization.phase, 'idle');
+    assert.equal(state.__context.localStorage.getItem('clipal.pendingOAuthSession'), null);
+    assert.equal(popup.closed, true);
 });
 
 test('saveGlobalConfig normalizes and clears non-custom upstream proxy settings', async () => {

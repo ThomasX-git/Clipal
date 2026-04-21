@@ -874,15 +874,14 @@
         @keydown.escape.window="closeModals()" @click.self="closeModals()">
         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
             <div class="modal-header">
-                <h2 id="modal-title"
-                    x-text="showEditProviderModal ? t('modal.provider.editTitle') : t('modal.provider.addTitle')"></h2>
+                <h2 id="modal-title" x-text="providerModalTitle()"></h2>
                 <button @click="closeModals()" class="icon-btn" style="font-size: 18px;"
                     :aria-label="t('modal.provider.close')">
                     &times;
                 </button>
             </div>
             <form @submit.prevent="saveProvider()">
-                <div class="modal-body form-horizontal-grid">
+                <div class="modal-body form-horizontal-grid" x-show="!oauthAuthorizationActive()">
                     <div class="form-grid-full form-control-wrap" x-show="!showEditProviderModal">
                         <div class="segmented-group" role="tablist" :aria-label="t('modal.provider.credentialSource')">
                             <button type="button" class="segment-btn" role="tab"
@@ -1009,10 +1008,32 @@
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer">
+                <div class="modal-body" x-show="oauthAuthorizationActive()">
+                    <div :class="oauthAuthorizationToneClass()">
+                        <div class="provider-oauth-flow__visual">
+                            <div class="spinner" x-show="oauthAuthorizationShowsSpinner()"></div>
+                            <div class="provider-oauth-flow__state-icon" x-show="!oauthAuthorizationShowsSpinner()">!</div>
+                        </div>
+                        <div class="provider-oauth-flow__content">
+                            <div class="provider-oauth-flow__title" x-text="oauthAuthorizationTitle()"></div>
+                            <div class="provider-oauth-flow__message" x-text="oauthAuthorizationMessage()"></div>
+                            <div class="provider-oauth-flow__meta" x-show="oauthAuthorizationExpiresHint()"
+                                x-text="oauthAuthorizationExpiresHint()"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer" x-show="!oauthAuthorizationActive()">
                     <button type="button" @click="closeModals()" class="btn btn-secondary"
                         x-text="t('common.cancel')"></button>
                     <button type="submit" class="btn btn-primary" x-text="providerModalSaveLabel()"></button>
+                </div>
+                <div class="modal-footer" x-show="oauthAuthorizationActive()">
+                    <button type="button" @click="cancelOAuthAuthorization()" class="btn btn-secondary"
+                        x-text="t('common.cancel')"></button>
+                    <button type="button" @click="openPendingOAuthAuthorizationWindow()" class="btn btn-secondary"
+                        x-show="oauthAuthorizationCanOpenWindow()" x-text="t('providers.oauthOpenWindow')"></button>
+                    <button type="button" @click="retryOAuthAuthorization()" class="btn btn-primary"
+                        x-show="oauthAuthorizationCanRetry()" x-text="t('providers.oauthRetry')"></button>
                 </div>
             </form>
         </div>

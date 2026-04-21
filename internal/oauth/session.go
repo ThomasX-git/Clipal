@@ -91,12 +91,25 @@ func (s *Service) StartLogin(provider config.OAuthProvider) (*LoginSession, erro
 		return nil, fmt.Errorf("unsupported oauth provider %q", provider)
 	}
 
+	s.mu.Lock()
+	s.sweepExpiredSessionsLocked()
+	callbacks := s.supersedePendingSessionsLocked(provider)
+	s.mu.Unlock()
+	for _, callback := range callbacks {
+		if callback != nil {
+			_ = callback.Close()
+		}
+	}
+
 	pkce, err := GeneratePKCECodes()
 	if err != nil {
 		return nil, err
 	}
 	callback, redirectURI, err := startCallbackServer(s.codex.callbackHost(), s.codex.callbackPort(), s.codex.callbackPath())
 	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "address already in use") {
+			return nil, fmt.Errorf("codex callback port %d is already in use; close the existing authorization flow or the process using that port, then retry", s.codex.callbackPort())
+		}
 		return nil, err
 	}
 
@@ -127,6 +140,20 @@ func (s *Service) StartLogin(provider config.OAuthProvider) (*LoginSession, erro
 	s.sweepExpiredSessionsLocked()
 	s.sessions[session.ID] = session
 	return session.Clone(), nil
+}
+
+func (s *Service) supersedePendingSessionsLocked(provider config.OAuthProvider) []*callbackServer {
+	var callbacks []*callbackServer
+	for _, session := range s.sessions {
+		if session == nil || session.Provider != provider || session.Status != LoginStatusPending || session.callback == nil {
+			continue
+		}
+		callbacks = append(callbacks, session.callback)
+		session.callback = nil
+		session.Status = LoginStatusError
+		session.Error = "oauth session superseded by a new authorization attempt"
+	}
+	return callbacks
 }
 
 func (s *Service) PollLogin(sessionID string) (*LoginSession, error) {
@@ -350,8 +377,8 @@ func startCallbackServer(host string, port int, path string) (*callbackServer, s
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`<!DOCTYPE html><html><body><script>(function(){if(window.opener){window.close();}})();</script><h1>Authentication received</h1><p>Return to Clipal to finish setup. You can close this window if it does not close automatically.</p></body></html>`))
-	})
+			_, _ = w.Write([]byte(`<!DOCTYPE html><html><body><script>(function(){window.close();setTimeout(function(){window.close();},100);})();</script><h1>Authentication received</h1><p>Return to Clipal to finish setup. You can close this window if it does not close automatically.</p></body></html>`))
+		})
 	server.server = &http.Server{
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,

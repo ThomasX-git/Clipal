@@ -1,6 +1,23 @@
 const pendingOAuthSessionStorageKey = 'clipal.pendingOAuthSession'
+const oauthAuthorizationCancelledError = 'clipal.oauth.cancelled'
+
+function defaultOAuthAuthorizationState() {
+    return {
+        phase: 'idle',
+        provider: '',
+        client_type: '',
+        session_id: '',
+        started_at: 0,
+        expires_at: '',
+        auth_url: '',
+        popup_blocked: false,
+        error: ''
+    };
+}
 
 function app() {
+    let oauthAuthorizationPopup = null;
+
     return {
         // State
         isLoading: false,
@@ -14,6 +31,8 @@ function app() {
         pendingOAuthSession: null,
         oauthPollingSessionId: '',
         oauthPollingPromise: null,
+        oauthPollingToken: 0,
+        oauthAuthorization: defaultOAuthAuthorizationState(),
         integrations: [],
         integrationBusyProduct: '',
         serviceBusyAction: '',
@@ -138,6 +157,14 @@ function app() {
                     oauthAccount: 'OAuth Account',
                     oauthAuthorizingTitle: 'Authorize {provider}',
                     oauthAuthorizingMessage: 'Finish the OAuth flow in the opened window. Clipal will add the provider automatically after authorization.',
+                    oauthOpeningMessage: 'Preparing the authorization window...',
+                    oauthWaitingMessage: 'Finish the OAuth flow in the opened window. Clipal will keep listening here and add the provider automatically.',
+                    oauthPopupBlockedMessage: 'Clipal could not open the authorization window automatically. Use the button below to continue in a new window.',
+                    oauthTimedOutMessage: 'Authorization timed out before completion. Start a new authorization session and try again.',
+                    oauthFailedMessage: 'Authorization did not complete. Start a new authorization session and try again.',
+                    oauthOpenWindow: 'Open Authorization Window',
+                    oauthRetry: 'Retry Authorization',
+                    oauthExpiresHint: 'Session expires {time}',
                     oauthAddedTitle: '{provider} authorized',
                     oauthAddedMessage: '{email} is now available for {client}.',
                     oauthEditLocked: 'OAuth accounts are managed by authorization. Reauthorize or delete the account instead.',
@@ -490,6 +517,14 @@ function app() {
                     oauthAccount: 'OAuth 账号',
                     oauthAuthorizingTitle: '授权 {provider}',
                     oauthAuthorizingMessage: '请在新打开的窗口完成 OAuth 授权。授权完成后，Clipal 会自动创建这个 Provider。',
+                    oauthOpeningMessage: '正在准备授权窗口...',
+                    oauthWaitingMessage: '请在新打开的窗口完成 OAuth 授权。Clipal 会在这里持续等待，并在授权完成后自动创建 Provider。',
+                    oauthPopupBlockedMessage: 'Clipal 无法自动打开授权窗口。请使用下面的按钮在新窗口中继续。',
+                    oauthTimedOutMessage: '授权超时了。请重新发起一次授权。',
+                    oauthFailedMessage: '授权没有完成。请重新发起一次授权。',
+                    oauthOpenWindow: '打开授权窗口',
+                    oauthRetry: '重新授权',
+                    oauthExpiresHint: '会话将在 {time} 过期',
                     oauthAddedTitle: '{provider} 已授权',
                     oauthAddedMessage: '{email} 现在已经可供 {client} 使用。',
                     oauthEditLocked: 'OAuth 账号由授权流程管理。请重新授权或删除账号。',
@@ -939,6 +974,8 @@ function app() {
             const provider = String(session.provider || '').trim().toLowerCase();
             const clientType = String(session.client_type || '').trim().toLowerCase();
             const startedAtValue = Number(session.started_at || 0);
+            const expiresAt = String(session.expires_at || '').trim();
+            const authURL = String(session.auth_url || '').trim();
 
             if (!sessionId || !provider || !this.isSupportedClientType(clientType)) {
                 return null;
@@ -948,8 +985,203 @@ function app() {
                 session_id: sessionId,
                 provider,
                 client_type: clientType,
-                started_at: Number.isFinite(startedAtValue) && startedAtValue > 0 ? startedAtValue : Date.now()
+                started_at: Number.isFinite(startedAtValue) && startedAtValue > 0 ? startedAtValue : Date.now(),
+                expires_at: this.parseTimestamp(expiresAt) ? expiresAt : '',
+                auth_url: authURL
             };
+        },
+
+        stopOAuthPolling() {
+            this.oauthPollingToken += 1;
+            this.oauthPollingSessionId = '';
+            this.oauthPollingPromise = null;
+        },
+
+        closeOAuthAuthorizationPopup() {
+            const popup = oauthAuthorizationPopup;
+            oauthAuthorizationPopup = null;
+            if (!popup || typeof popup.close !== 'function') {
+                return;
+            }
+            try {
+                popup.close();
+            } catch (error) {
+                console.error('Failed to close OAuth popup:', error);
+            }
+        },
+
+        updateOAuthAuthorization(patch = {}) {
+            const current = this.oauthAuthorization && typeof this.oauthAuthorization === 'object'
+                ? this.oauthAuthorization
+                : defaultOAuthAuthorizationState();
+            this.oauthAuthorization = {
+                ...defaultOAuthAuthorizationState(),
+                ...current,
+                ...(patch || {})
+            };
+            return this.oauthAuthorization;
+        },
+
+        resetOAuthAuthorization() {
+            this.oauthAuthorization = defaultOAuthAuthorizationState();
+            this.closeOAuthAuthorizationPopup();
+        },
+
+        showOAuthAuthorizationModal(session = null) {
+            const provider = String((session && session.provider) || this.providerForm.oauth_provider || '').trim().toLowerCase();
+            this.showEditProviderModal = false;
+            this.showAddProviderModal = true;
+            this.providerForm.auth_type = 'oauth';
+            if (provider) {
+                this.providerForm.oauth_provider = provider;
+            }
+        },
+
+        applyOAuthAuthorizationState(session = null, patch = {}) {
+            const base = session && typeof session === 'object'
+                ? this.normalizePendingOAuthSession(session) || session
+                : null;
+            if (base) {
+                this.showOAuthAuthorizationModal(base);
+            }
+            return this.updateOAuthAuthorization({
+                provider: String((base && base.provider) || this.oauthAuthorization.provider || this.providerForm.oauth_provider || '').trim().toLowerCase(),
+                client_type: String((base && base.client_type) || this.oauthAuthorization.client_type || this.selectedClient || '').trim().toLowerCase(),
+                session_id: String((base && base.session_id) || this.oauthAuthorization.session_id || '').trim(),
+                started_at: Number(base && base.started_at) || Number(this.oauthAuthorization.started_at) || 0,
+                expires_at: String((base && base.expires_at) || this.oauthAuthorization.expires_at || '').trim(),
+                auth_url: String((base && base.auth_url) || this.oauthAuthorization.auth_url || '').trim(),
+                popup_blocked: false,
+                error: '',
+                ...(patch || {})
+            });
+        },
+
+        oauthAuthorizationActive() {
+            return this.showAddProviderModal
+                && !this.showEditProviderModal
+                && String((this.oauthAuthorization && this.oauthAuthorization.phase) || '').trim() !== 'idle';
+        },
+
+        oauthAuthorizationShowsSpinner() {
+            const phase = String((this.oauthAuthorization && this.oauthAuthorization.phase) || '').trim();
+            return phase === 'opening' || phase === 'waiting';
+        },
+
+        oauthAuthorizationProviderLabel() {
+            return this.oauthProviderLabel((this.oauthAuthorization && this.oauthAuthorization.provider) || this.providerForm.oauth_provider || '');
+        },
+
+        oauthAuthorizationTitle() {
+            return this.tf('providers.oauthAuthorizingTitle', {
+                provider: this.oauthAuthorizationProviderLabel()
+            });
+        },
+
+        oauthAuthorizationMessage() {
+            const phase = String((this.oauthAuthorization && this.oauthAuthorization.phase) || '').trim();
+            switch (phase) {
+                case 'opening':
+                    return this.t('providers.oauthOpeningMessage');
+                case 'blocked':
+                    return this.t('providers.oauthPopupBlockedMessage');
+                case 'timed_out':
+                    return String((this.oauthAuthorization && this.oauthAuthorization.error) || '').trim() || this.t('providers.oauthTimedOutMessage');
+                case 'error':
+                    return String((this.oauthAuthorization && this.oauthAuthorization.error) || '').trim() || this.t('providers.oauthFailedMessage');
+                default:
+                    return this.t('providers.oauthWaitingMessage');
+            }
+        },
+
+        oauthAuthorizationExpiresHint() {
+            const expiresAt = this.parseTimestamp(this.oauthAuthorization && this.oauthAuthorization.expires_at);
+            if (!expiresAt) {
+                return '';
+            }
+            return this.tf('providers.oauthExpiresHint', {
+                time: this.formatRelativeTime(expiresAt, '')
+            });
+        },
+
+        oauthAuthorizationToneClass() {
+            const phase = String((this.oauthAuthorization && this.oauthAuthorization.phase) || '').trim();
+            if (phase === 'blocked' || phase === 'timed_out') {
+                return 'provider-oauth-flow provider-oauth-flow--warning';
+            }
+            if (phase === 'error') {
+                return 'provider-oauth-flow provider-oauth-flow--error';
+            }
+            return 'provider-oauth-flow provider-oauth-flow--active';
+        },
+
+        oauthAuthorizationCanOpenWindow() {
+            const phase = String((this.oauthAuthorization && this.oauthAuthorization.phase) || '').trim();
+            const authURL = String((this.oauthAuthorization && this.oauthAuthorization.auth_url) || '').trim();
+            return !!authURL && (phase === 'blocked' || phase === 'waiting');
+        },
+
+        oauthAuthorizationCanRetry() {
+            const phase = String((this.oauthAuthorization && this.oauthAuthorization.phase) || '').trim();
+            return phase === 'timed_out' || phase === 'error';
+        },
+
+        openOAuthAuthorizationPopup(url = '') {
+            const nextURL = String(url || '').trim();
+            if (!nextURL || typeof window === 'undefined' || typeof window.open !== 'function') {
+                oauthAuthorizationPopup = null;
+                return null;
+            }
+            this.closeOAuthAuthorizationPopup();
+            try {
+                const popup = window.open(nextURL, '_blank');
+                oauthAuthorizationPopup = popup || null;
+                return popup || null;
+            } catch (error) {
+                console.error('Failed to open OAuth popup:', error);
+                oauthAuthorizationPopup = null;
+                return null;
+            }
+        },
+
+        openPendingOAuthAuthorizationWindow() {
+            const authURL = String((this.oauthAuthorization && this.oauthAuthorization.auth_url) || '').trim();
+            if (!authURL) {
+                return false;
+            }
+            const popup = this.openOAuthAuthorizationPopup(authURL);
+            if (!popup) {
+                this.updateOAuthAuthorization({
+                    phase: 'blocked',
+                    popup_blocked: true
+                });
+                return false;
+            }
+            this.updateOAuthAuthorization({
+                phase: 'waiting',
+                popup_blocked: false
+            });
+            return true;
+        },
+
+        cancelOAuthAuthorization(keepModal = true) {
+            this.stopOAuthPolling();
+            this.clearPendingOAuthSession();
+            this.resetOAuthAuthorization();
+            if (!keepModal) {
+                this.showAddProviderModal = false;
+                this.showEditProviderModal = false;
+            }
+        },
+
+        retryOAuthAuthorization() {
+            const provider = String((this.oauthAuthorization && this.oauthAuthorization.provider) || this.providerForm.oauth_provider || '').trim().toLowerCase();
+            this.cancelOAuthAuthorization(true);
+            this.providerForm.auth_type = 'oauth';
+            if (provider) {
+                this.providerForm.oauth_provider = provider;
+            }
+            return this.startOAuthProviderAuthorization();
         },
 
         loadPendingOAuthSession() {
@@ -1020,6 +1252,7 @@ function app() {
                 this.selectedClient = targetClient;
             }
 
+            this.applyOAuthAuthorizationState(pending, { phase: 'completed', popup_blocked: false, error: '' });
             const displayName = String(session.display_name || session.email || session.provider_name || '').trim();
             this.showAlert(
                 'success',
@@ -1032,9 +1265,26 @@ function app() {
                 })
             );
 
-            this.closeModals();
-            await this.loadProviders();
-            await this.refreshStatus();
+            try {
+                this.closeModals();
+            } catch (error) {
+                console.error('Failed to close OAuth authorization modal after success:', error);
+                this.showAddProviderModal = false;
+                this.showEditProviderModal = false;
+                this.oauthAuthorization = defaultOAuthAuthorizationState();
+            }
+
+            try {
+                await this.loadProviders();
+            } catch (error) {
+                console.error('Failed to reload providers after successful OAuth authorization:', error);
+            }
+
+            try {
+                await this.refreshStatus();
+            } catch (error) {
+                console.error('Failed to refresh status after successful OAuth authorization:', error);
+            }
         },
 
         defaultOAuthProviderValue() {
@@ -1090,30 +1340,63 @@ function app() {
             }
 
             const showError = options.showError !== false;
+            const phase = String(options.phase || '').trim() || 'waiting';
+            const token = this.oauthPollingToken + 1;
+            this.oauthPollingToken = token;
             this.oauthPollingSessionId = pending.session_id;
-            this.oauthPollingPromise = (async () => {
+            this.applyOAuthAuthorizationState(pending, {
+                phase,
+                popup_blocked: phase === 'blocked',
+                error: ''
+            });
+            const promise = (async () => {
                 try {
-                    const session = await this.pollOAuthSession(pending.session_id);
+                    const session = await this.pollOAuthSession(pending.session_id, { pending, token });
                     const status = String((session && session.status) || '').trim().toLowerCase();
                     if (status !== 'completed') {
-                        throw new Error((session && session.error) || 'OAuth authorization did not complete');
+                        const message = String((session && session.error) || '').trim()
+                            || (status === 'expired'
+                                ? this.t('providers.oauthTimedOutMessage')
+                                : this.t('providers.oauthFailedMessage'));
+                        this.clearPendingOAuthSession();
+                        this.applyOAuthAuthorizationState(pending, {
+                            phase: status === 'expired' ? 'timed_out' : 'error',
+                            popup_blocked: false,
+                            error: message
+                        });
+                        if (showError) {
+                            this.showAlert('error', message, this.oauthAuthorizationTitle());
+                        }
+                        return session;
                     }
 
                     this.clearPendingOAuthSession();
                     await this.handleCompletedOAuthSession(pending, session);
                     return session;
                 } catch (error) {
+                    if (error && error.message === oauthAuthorizationCancelledError) {
+                        return null;
+                    }
+                    const message = String((error && error.message) || '').trim() || this.t('providers.oauthFailedMessage');
                     this.clearPendingOAuthSession();
-                    if (showError && error && error.message) {
-                        this.showAlert('error', error.message);
+                    this.applyOAuthAuthorizationState(pending, {
+                        phase: message === this.t('providers.oauthTimedOutMessage') ? 'timed_out' : 'error',
+                        popup_blocked: false,
+                        error: message
+                    });
+                    if (showError && message) {
+                        this.showAlert('error', message, this.oauthAuthorizationTitle());
                     }
                     throw error;
                 } finally {
-                    this.oauthPollingSessionId = '';
-                    this.oauthPollingPromise = null;
+                    if (this.oauthPollingPromise === promise) {
+                        this.oauthPollingSessionId = '';
+                        this.oauthPollingPromise = null;
+                    }
                 }
             })();
-            return this.oauthPollingPromise;
+            this.oauthPollingPromise = promise;
+            return promise;
         },
 
         // Initialization
@@ -1144,7 +1427,7 @@ function app() {
             }
 
             if (pendingOAuthSession) {
-                this.resumePendingOAuthSession(pendingOAuthSession).catch(error => {
+                this.resumePendingOAuthSession(pendingOAuthSession, { showError: false }).catch(error => {
                     console.error('Failed to resume pending OAuth session:', error);
                 });
             }
@@ -2255,6 +2538,15 @@ function app() {
             return this.t('modal.provider.saveProvider');
         },
 
+        providerModalTitle() {
+            if (this.oauthAuthorizationActive()) {
+                return this.oauthAuthorizationTitle();
+            }
+            return this.showEditProviderModal
+                ? this.t('modal.provider.editTitle')
+                : this.t('modal.provider.addTitle');
+        },
+
         providerProxySummary(provider) {
             const mode = this.normalizeProviderProxyMode(provider && provider.proxy_mode);
             if (mode === 'direct') {
@@ -2831,48 +3123,91 @@ function app() {
             if (!provider) {
                 throw new Error(this.t('providers.oauthUnavailable'));
             }
-            const started = await this.apiCall('/api/oauth/providers/start', {
-                method: 'POST',
-                body: JSON.stringify({
-                    client_type: this.selectedClient,
-                    provider
-                })
+            this.stopOAuthPolling();
+            this.clearPendingOAuthSession();
+            this.resetOAuthAuthorization();
+            this.showOAuthAuthorizationModal({
+                provider,
+                client_type: this.selectedClient
             });
+            this.applyOAuthAuthorizationState({
+                provider,
+                client_type: this.selectedClient,
+                started_at: Date.now()
+            }, {
+                phase: 'opening',
+                popup_blocked: false,
+                error: ''
+            });
+
+            let started;
+            try {
+                started = await this.apiCall('/api/oauth/providers/start', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        client_type: this.selectedClient,
+                        provider
+                    })
+                });
+            } catch (error) {
+                this.closeOAuthAuthorizationPopup();
+                this.applyOAuthAuthorizationState({
+                    provider,
+                    client_type: this.selectedClient,
+                    started_at: Date.now()
+                }, {
+                    phase: 'error',
+                    popup_blocked: false,
+                    error: String((error && error.message) || '').trim() || this.t('providers.oauthFailedMessage')
+                });
+                throw error;
+            }
+
             const pending = this.savePendingOAuthSession({
                 session_id: started.session_id,
                 provider,
                 client_type: this.selectedClient,
-                started_at: Date.now()
+                started_at: Date.now(),
+                expires_at: started.expires_at,
+                auth_url: started.auth_url
             });
 
-            let popupOpened = false;
-            if (typeof window !== 'undefined' && typeof window.open === 'function') {
-                const popup = window.open(started.auth_url, '_blank', 'noopener,noreferrer');
-                popupOpened = !!popup;
-                if (!popupOpened && window.location && typeof window.location.assign === 'function') {
-                    window.location.assign(started.auth_url);
-                    return null;
-                }
-            } else if (typeof window !== 'undefined' && window.location && typeof window.location.assign === 'function') {
-                window.location.assign(started.auth_url);
-                return null;
-            }
-
+            const popupOpened = !!this.openOAuthAuthorizationPopup(started.auth_url);
             this.showAlert(
                 'info',
                 this.t('providers.oauthAuthorizingMessage'),
                 this.tf('providers.oauthAuthorizingTitle', { provider: this.oauthProviderLabel(provider) })
             );
 
-            if (!popupOpened) {
-                return null;
-            }
-
-            return this.resumePendingOAuthSession(pending || {
+            const nextPhase = popupOpened ? 'waiting' : 'blocked';
+            this.applyOAuthAuthorizationState(pending || {
                 session_id: started.session_id,
                 provider,
-                client_type: this.selectedClient
+                client_type: this.selectedClient,
+                expires_at: started.expires_at,
+                auth_url: started.auth_url
+            }, {
+                phase: nextPhase,
+                popup_blocked: !popupOpened,
+                error: ''
             });
+
+            this.resumePendingOAuthSession(pending || {
+                session_id: started.session_id,
+                provider,
+                client_type: this.selectedClient,
+                expires_at: started.expires_at,
+                auth_url: started.auth_url
+            }, {
+                showError: false,
+                phase: nextPhase
+            }).catch(error => {
+                if (error && error.message !== oauthAuthorizationCancelledError) {
+                    console.error('Failed to resume pending OAuth session:', error);
+                }
+            });
+
+            return pending;
         },
 
         triggerOAuthImportPicker() {
@@ -2948,21 +3283,32 @@ function app() {
             return result;
         },
 
-        async pollOAuthSession(sessionId) {
+        async pollOAuthSession(sessionId, options = {}) {
             const id = String(sessionId || '').trim();
             if (!id) {
                 throw new Error('Missing OAuth session ID');
             }
-            const deadline = Date.now() + 5 * 60 * 1000;
+            const token = Number(options.token || 0);
+            const pending = options.pending && typeof options.pending === 'object' ? options.pending : null;
+            const expiresAt = this.parseTimestamp(pending && pending.expires_at);
+            const deadline = expiresAt
+                ? expiresAt.getTime()
+                : Date.now() + 5 * 60 * 1000;
             while (Date.now() < deadline) {
+                if (token && token !== this.oauthPollingToken) {
+                    throw new Error(oauthAuthorizationCancelledError);
+                }
                 const session = await this.apiCall(`/api/oauth/sessions/${encodeURIComponent(id)}`, {}, true, true);
                 const status = String((session && session.status) || '').trim().toLowerCase();
                 if (status === 'completed' || status === 'error' || status === 'expired') {
                     return session;
                 }
+                if (token && token !== this.oauthPollingToken) {
+                    throw new Error(oauthAuthorizationCancelledError);
+                }
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
-            throw new Error('OAuth authorization timed out');
+            throw new Error(this.t('providers.oauthTimedOutMessage'));
         },
 
         editProvider(provider) {
@@ -3033,6 +3379,9 @@ function app() {
                 const pr = typeof p.priority === 'number' ? p.priority : 0;
                 return pr > max ? pr : max;
             }, 0);
+            this.stopOAuthPolling();
+            this.clearPendingOAuthSession();
+            this.resetOAuthAuthorization();
             this.providerForm = {
                 auth_type: 'api_key',
                 oauth_provider: this.defaultOAuthProviderValue(),
@@ -3199,6 +3548,7 @@ function app() {
         },
 
         closeModals() {
+            this.cancelOAuthAuthorization(false);
             this.showAddProviderModal = false;
             this.showEditProviderModal = false;
             this.providerForm = {
