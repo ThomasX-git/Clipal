@@ -45,3 +45,6 @@ debug.log
 
 # Frontend notes
 /docs/frontend/
+
+# Generated files
+.playwright-mcp/
