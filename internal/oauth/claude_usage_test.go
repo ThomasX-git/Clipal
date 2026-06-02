@@ -59,6 +59,7 @@ func TestClaudeFetchUsage_ParsesQuotaWindows(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{
+			"subscriptionType": "max_20x",
 			"five_hour": {
 				"utilization": 100,
 				"resets_at": "`+resetTime+`"
@@ -92,6 +93,9 @@ func TestClaudeFetchUsage_ParsesQuotaWindows(t *testing.T) {
 	if details == nil || details.FiveHour == nil {
 		t.Fatalf("details = %#v, want five_hour window", details)
 	}
+	if details.PlanType != "max_20x" {
+		t.Fatalf("plan type = %q, want max_20x", details.PlanType)
+	}
 	if got := details.FiveHour.Utilization; got != 100 {
 		t.Fatalf("five_hour.utilization = %v, want 100", got)
 	}
@@ -107,6 +111,44 @@ func TestClaudeFetchUsage_ParsesQuotaWindows(t *testing.T) {
 	}
 	if details.ExtraUsage.MonthlyLimit == nil || *details.ExtraUsage.MonthlyLimit != 2500 {
 		t.Fatalf("monthly_limit = %#v, want 2500", details.ExtraUsage.MonthlyLimit)
+	}
+}
+
+func TestClaudeUsagePlanType_UsesKnownAliases(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload claudeUsagePayload
+		want    string
+	}{
+		{
+			name: "snake case subscription",
+			payload: claudeUsagePayload{
+				SubscriptionType: "pro",
+				PlanType:         "free",
+			},
+			want: "pro",
+		},
+		{
+			name: "camel case subscription",
+			payload: claudeUsagePayload{
+				SubscriptionTypeCamel: "max_20x",
+				PlanType:              "free",
+			},
+			want: "max_20x",
+		},
+		{
+			name: "plan type fallback",
+			payload: claudeUsagePayload{
+				PlanType: "team",
+			},
+			want: "team",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := claudeUsagePlanType(tc.payload); got != tc.want {
+				t.Fatalf("claudeUsagePlanType() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

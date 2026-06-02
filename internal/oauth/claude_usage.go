@@ -22,6 +22,7 @@ type claudeUsageFetcher interface {
 }
 
 type ClaudeUsageDetails struct {
+	PlanType          string
 	FiveHour          *ClaudeUsageWindow
 	SevenDay          *ClaudeUsageWindow
 	SevenDayOAuthApps *ClaudeUsageWindow
@@ -43,12 +44,15 @@ type ClaudeExtraUsage struct {
 }
 
 type claudeUsagePayload struct {
-	FiveHour          *claudeUsageWindowPayload `json:"five_hour"`
-	SevenDay          *claudeUsageWindowPayload `json:"seven_day"`
-	SevenDayOAuthApps *claudeUsageWindowPayload `json:"seven_day_oauth_apps"`
-	SevenDayOpus      *claudeUsageWindowPayload `json:"seven_day_opus"`
-	SevenDaySonnet    *claudeUsageWindowPayload `json:"seven_day_sonnet"`
-	ExtraUsage        *claudeExtraUsagePayload  `json:"extra_usage"`
+	PlanType              string                    `json:"plan_type"`
+	SubscriptionType      string                    `json:"subscription_type"`
+	SubscriptionTypeCamel string                    `json:"subscriptionType"`
+	FiveHour              *claudeUsageWindowPayload `json:"five_hour"`
+	SevenDay              *claudeUsageWindowPayload `json:"seven_day"`
+	SevenDayOAuthApps     *claudeUsageWindowPayload `json:"seven_day_oauth_apps"`
+	SevenDayOpus          *claudeUsageWindowPayload `json:"seven_day_opus"`
+	SevenDaySonnet        *claudeUsageWindowPayload `json:"seven_day_sonnet"`
+	ExtraUsage            *claudeExtraUsagePayload  `json:"extra_usage"`
 }
 
 type claudeUsageWindowPayload struct {
@@ -159,6 +163,7 @@ func (c *ClaudeClient) FetchUsage(ctx context.Context, cred *Credential) (*Claud
 
 func mapClaudeUsagePayload(payload claudeUsagePayload) *ClaudeUsageDetails {
 	return &ClaudeUsageDetails{
+		PlanType:          claudeUsagePlanType(payload),
 		FiveHour:          mapClaudeUsageWindow(payload.FiveHour),
 		SevenDay:          mapClaudeUsageWindow(payload.SevenDay),
 		SevenDayOAuthApps: mapClaudeUsageWindow(payload.SevenDayOAuthApps),
@@ -191,6 +196,15 @@ func mapClaudeExtraUsage(payload *claudeExtraUsagePayload) *ClaudeExtraUsage {
 		UsedCredits:  payload.UsedCredits,
 		Utilization:  payload.Utilization,
 	}
+}
+
+func claudeUsagePlanType(payload claudeUsagePayload) string {
+	for _, candidate := range []string{payload.SubscriptionType, payload.SubscriptionTypeCamel, payload.PlanType} {
+		if value := strings.TrimSpace(candidate); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func parseClaudeUsageResetTime(value string) (time.Time, bool) {

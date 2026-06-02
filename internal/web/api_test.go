@@ -982,6 +982,213 @@ providers:
 	}
 }
 
+func TestHandleGetProviderOAuthMetadata_IncludesClaudeUsageLimits(t *testing.T) {
+	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	fiveHourReset := now.Add(90 * time.Minute)
+	weeklyReset := now.Add(6 * 24 * time.Hour)
+	usageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/api/oauth/usage" {
+			t.Fatalf("path = %s, want /api/oauth/usage", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer access-1" {
+			t.Fatalf("authorization = %q", got)
+		}
+		if got := r.Header.Get("Anthropic-Beta"); got != "oauth-2025-04-20" {
+			t.Fatalf("anthropic beta = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, fmt.Sprintf(`{
+  "subscriptionType": "max_20x",
+  "five_hour": {
+    "utilization": 88,
+    "resets_at": %q
+  },
+  "seven_day": {
+    "utilization": 42,
+    "resets_at": %q
+  },
+  "seven_day_opus": {
+    "utilization": 70,
+    "resets_at": %q
+  },
+  "extra_usage": {
+    "is_enabled": true,
+    "monthly_limit": 2500,
+    "used_credits": 1250
+  }
+}`, fiveHourReset.Format(time.RFC3339), weeklyReset.Format(time.RFC3339), weeklyReset.Format(time.RFC3339)))
+	}))
+	defer usageServer.Close()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "claude.yaml"), []byte(`
+providers:
+  - name: claude-sean-example-com
+    auth_type: oauth
+    oauth_provider: claude
+    oauth_ref: claude-sean-example-com
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	api := NewAPI(dir, "test", nil)
+	api.oauth = oauthpkg.NewService(
+		dir,
+		oauthpkg.WithNowFunc(func() time.Time { return now }),
+		oauthpkg.WithClaudeClient(&oauthpkg.ClaudeClient{
+			UsageURL:   usageServer.URL + "/api/oauth/usage",
+			HTTPClient: usageServer.Client(),
+			Now:        func() time.Time { return now },
+		}),
+	)
+
+	if err := api.oauth.Store().Save(&oauthpkg.Credential{
+		Ref:          "claude-sean-example-com",
+		Provider:     config.OAuthProviderClaude,
+		Email:        "sean@example.com",
+		AccountID:    "account-123",
+		AccessToken:  "access-1",
+		RefreshToken: "refresh-1",
+		ExpiresAt:    now.Add(24 * time.Hour),
+		LastRefresh:  now.Add(-30 * time.Minute),
+		Metadata: map[string]string{
+			"plan_type": "pro",
+		},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/providers/claude/claude-sean-example-com/oauth-metadata", nil)
+	w := httptest.NewRecorder()
+	api.HandleGetProviderOAuthMetadata(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode json: %v\nbody=%s", err, w.Body.String())
+	}
+	if got["oauth_plan_type"] != "max_20x" {
+		t.Fatalf("oauth_plan_type = %v, want max_20x", got["oauth_plan_type"])
+	}
+	limits, ok := got["oauth_rate_limits"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected oauth_rate_limits object, got %#v", got["oauth_rate_limits"])
+	}
+	primary, ok := limits["primary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected primary rate limit, got %#v", limits["primary"])
+	}
+	if primary["used_percent"] != float64(88) {
+		t.Fatalf("primary.used_percent = %v, want 88", primary["used_percent"])
+	}
+	if primary["window_minutes"] != float64(300) {
+		t.Fatalf("primary.window_minutes = %v, want 300", primary["window_minutes"])
+	}
+	if primary["resets_at"] != fiveHourReset.Format(time.RFC3339) {
+		t.Fatalf("primary.resets_at = %v, want %s", primary["resets_at"], fiveHourReset.Format(time.RFC3339))
+	}
+	secondary, ok := limits["secondary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected secondary rate limit, got %#v", limits["secondary"])
+	}
+	if secondary["window_minutes"] != float64(10080) {
+		t.Fatalf("secondary.window_minutes = %v, want 10080", secondary["window_minutes"])
+	}
+	additional, ok := limits["additional"].([]any)
+	if !ok || len(additional) != 2 {
+		t.Fatalf("expected two additional rate limits, got %#v", limits["additional"])
+	}
+	opus, ok := additional[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected opus additional limit object, got %#v", additional[0])
+	}
+	if opus["limit_id"] != "claude_opus" {
+		t.Fatalf("limit_id = %v, want claude_opus", opus["limit_id"])
+	}
+	extra, ok := additional[1].(map[string]any)
+	if !ok {
+		t.Fatalf("expected extra usage limit object, got %#v", additional[1])
+	}
+	extraPrimary, ok := extra["primary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected extra usage primary window, got %#v", extra["primary"])
+	}
+	if extraPrimary["used_percent"] != float64(50) {
+		t.Fatalf("extra.primary.used_percent = %v, want 50", extraPrimary["used_percent"])
+	}
+}
+
+func TestHandleGetProviderOAuthMetadata_ClaudePlanFallsBackToCredentialMetadata(t *testing.T) {
+	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	usageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+  "five_hour": {
+    "utilization": 10,
+    "resets_at": "2026-05-08T13:30:00Z"
+  }
+}`)
+	}))
+	defer usageServer.Close()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "claude.yaml"), []byte(`
+providers:
+  - name: claude-sean-example-com
+    auth_type: oauth
+    oauth_provider: claude
+    oauth_ref: claude-sean-example-com
+    priority: 1
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	api := NewAPI(dir, "test", nil)
+	api.oauth = oauthpkg.NewService(
+		dir,
+		oauthpkg.WithNowFunc(func() time.Time { return now }),
+		oauthpkg.WithClaudeClient(&oauthpkg.ClaudeClient{
+			UsageURL:   usageServer.URL,
+			HTTPClient: usageServer.Client(),
+			Now:        func() time.Time { return now },
+		}),
+	)
+
+	if err := api.oauth.Store().Save(&oauthpkg.Credential{
+		Ref:         "claude-sean-example-com",
+		Provider:    config.OAuthProviderClaude,
+		Email:       "sean@example.com",
+		AccessToken: "access-1",
+		ExpiresAt:   now.Add(24 * time.Hour),
+		Metadata: map[string]string{
+			"plan_type": "team",
+		},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/providers/claude/claude-sean-example-com/oauth-metadata", nil)
+	w := httptest.NewRecorder()
+	api.HandleGetProviderOAuthMetadata(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Result().StatusCode, w.Body.String())
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode json: %v\nbody=%s", err, w.Body.String())
+	}
+	if got["oauth_plan_type"] != "team" {
+		t.Fatalf("oauth_plan_type = %v, want team", got["oauth_plan_type"])
+	}
+}
+
 func TestHandleGetProviders_OAuthMetadata_RefreshDue(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "openai.yaml"), []byte(`

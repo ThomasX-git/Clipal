@@ -2820,8 +2820,12 @@ function app() {
         },
 
         providerOAuthAdditionalLimitLabel(limit, window) {
-            const base = this.humanizeRateLimitName((limit && (limit.limit_name || limit.limit_id)) || '');
             const normalized = String((limit && (limit.limit_id || limit.limit_name)) || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+            const base = this.humanizeRateLimitName(
+                this.providerOAuthUsesLocalizedLimitID(normalized)
+                    ? normalized
+                    : ((limit && (limit.limit_name || limit.limit_id)) || '')
+            );
             const windowLabel = this.providerOAuthRateLimitWindowLabel(window);
             const windowMinutes = Math.round(Number(window && window.window_minutes) || 0);
             if (normalized === 'code_review' && windowMinutes === 10080) {
@@ -2842,6 +2846,18 @@ function app() {
             return `${base} ${windowLabel.charAt(0).toLowerCase()}${windowLabel.slice(1)}`;
         },
 
+        providerOAuthUsesLocalizedLimitID(normalized) {
+            switch (String(normalized || '').trim().toLowerCase()) {
+                case 'claude_oauth_apps':
+                case 'claude_opus':
+                case 'claude_sonnet':
+                case 'claude_extra_usage':
+                    return true;
+                default:
+                    return false;
+            }
+        },
+
         humanizeRateLimitName(value) {
             const raw = String(value || '').trim();
             if (!raw) {
@@ -2850,6 +2866,18 @@ function app() {
             const normalized = raw.toLowerCase().replace(/[\s-]+/g, '_');
             if (normalized === 'code_review') {
                 return this.locale === 'zh-CN' ? '代码审查' : 'Code review';
+            }
+            if (normalized === 'claude_oauth_apps') {
+                return this.locale === 'zh-CN' ? 'OAuth 应用' : 'OAuth apps';
+            }
+            if (normalized === 'claude_opus') {
+                return 'Opus';
+            }
+            if (normalized === 'claude_sonnet') {
+                return 'Sonnet';
+            }
+            if (normalized === 'claude_extra_usage') {
+                return this.locale === 'zh-CN' ? '额外用量' : 'Extra usage';
             }
             return raw
                 .replace(/[_-]+/g, ' ')
@@ -2973,8 +3001,9 @@ function app() {
         },
 
         providerSupportsOAuthMetadata(provider) {
+            const oauthProvider = String((provider && provider.oauth_provider) || '').trim().toLowerCase();
             return this.providerUsesOAuth(provider)
-                && String((provider && provider.oauth_provider) || '').trim().toLowerCase() === 'codex'
+                && (oauthProvider === 'codex' || oauthProvider === 'claude')
                 && String((provider && provider.oauth_ref) || '').trim() !== '';
         },
 

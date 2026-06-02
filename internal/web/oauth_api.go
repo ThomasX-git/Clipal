@@ -342,23 +342,43 @@ func (a *API) HandleGetProviderOAuthMetadata(w http.ResponseWriter, r *http.Requ
 		writeError(w, "provider does not use oauth", http.StatusBadRequest)
 		return
 	}
-	if provider.NormalizedOAuthProvider() != config.OAuthProviderCodex {
+	oauthProvider := provider.NormalizedOAuthProvider()
+	if oauthProvider != config.OAuthProviderCodex && oauthProvider != config.OAuthProviderClaude {
 		writeError(w, "oauth metadata is unavailable for this provider", http.StatusBadRequest)
 		return
 	}
 
 	usageCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	details, err := a.oauth.GetCodexUsageWithHTTPClient(usageCtx, provider.NormalizedOAuthRef(), proxypkg.NewOAuthHTTPClientForProvider(*provider, cfg.Global))
+	httpClient := proxypkg.NewOAuthHTTPClientForProvider(*provider, cfg.Global)
+	var resp ProviderOAuthMetadataResponse
+	var metadataErr error
+	switch oauthProvider {
+	case config.OAuthProviderCodex:
+		var details *oauthpkg.CodexUsageDetails
+		details, metadataErr = a.oauth.GetCodexUsageWithHTTPClient(usageCtx, provider.NormalizedOAuthRef(), httpClient)
+		if details != nil {
+			resp = ProviderOAuthMetadataResponse{
+				OAuthPlanType:   details.PlanType,
+				OAuthRateLimits: mapProviderCodexOAuthLimitsResponse(details),
+			}
+		}
+	case config.OAuthProviderClaude:
+		var details *oauthpkg.ClaudeUsageDetails
+		details, metadataErr = a.oauth.GetClaudeUsageWithHTTPClient(usageCtx, provider.NormalizedOAuthRef(), httpClient)
+		if details != nil {
+			resp = ProviderOAuthMetadataResponse{
+				OAuthPlanType:   firstNonEmptyString(details.PlanType, claudeOAuthPlanType(a.oauth, provider.NormalizedOAuthRef())),
+				OAuthRateLimits: mapProviderClaudeOAuthLimitsResponse(details),
+			}
+		}
+	}
 	cancel()
-	if err != nil {
-		writeAPIError(w, newAPIError(http.StatusBadGateway, fmt.Sprintf("failed to load oauth metadata: %v", err), err))
+	if metadataErr != nil {
+		writeAPIError(w, newAPIError(http.StatusBadGateway, fmt.Sprintf("failed to load oauth metadata: %v", metadataErr), metadataErr))
 		return
 	}
 
-	writeJSON(w, ProviderOAuthMetadataResponse{
-		OAuthPlanType:   details.PlanType,
-		OAuthRateLimits: mapProviderOAuthLimitsResponse(details),
-	})
+	writeJSON(w, resp)
 }
 
 func (a *API) toProviderResponses(providers []config.Provider, usageByProvider map[string]telemetry.ProviderUsage) []ProviderResponse {
@@ -381,20 +401,20 @@ func (a *API) toProviderResponses(providers []config.Provider, usageByProvider m
 	return out
 }
 
-func mapProviderOAuthLimitsResponse(details *oauthpkg.CodexUsageDetails) *ProviderOAuthLimits {
+func mapProviderCodexOAuthLimitsResponse(details *oauthpkg.CodexUsageDetails) *ProviderOAuthLimits {
 	if details == nil {
 		return nil
 	}
 	resp := &ProviderOAuthLimits{
-		Primary:   mapProviderOAuthLimitWindow(details.Primary),
-		Secondary: mapProviderOAuthLimitWindow(details.Secondary),
+		Primary:   mapProviderCodexOAuthLimitWindow(details.Primary),
+		Secondary: mapProviderCodexOAuthLimitWindow(details.Secondary),
 	}
 	for _, item := range details.Additional {
 		resp.Additional = append(resp.Additional, ProviderOAuthAdditionalLimit{
 			LimitID:   strings.TrimSpace(item.LimitID),
 			LimitName: strings.TrimSpace(item.LimitName),
-			Primary:   mapProviderOAuthLimitWindow(item.Primary),
-			Secondary: mapProviderOAuthLimitWindow(item.Secondary),
+			Primary:   mapProviderCodexOAuthLimitWindow(item.Primary),
+			Secondary: mapProviderCodexOAuthLimitWindow(item.Secondary),
 		})
 	}
 	if resp.Primary == nil && resp.Secondary == nil && len(resp.Additional) == 0 {
@@ -403,7 +423,7 @@ func mapProviderOAuthLimitsResponse(details *oauthpkg.CodexUsageDetails) *Provid
 	return resp
 }
 
-func mapProviderOAuthLimitWindow(window *oauthpkg.CodexUsageWindow) *ProviderOAuthLimitWindow {
+func mapProviderCodexOAuthLimitWindow(window *oauthpkg.CodexUsageWindow) *ProviderOAuthLimitWindow {
 	if window == nil {
 		return nil
 	}
@@ -412,6 +432,86 @@ func mapProviderOAuthLimitWindow(window *oauthpkg.CodexUsageWindow) *ProviderOAu
 		WindowMinutes: window.WindowMinutes,
 		ResetsAt:      formatTimeRFC3339(window.ResetsAt),
 	}
+}
+
+func mapProviderClaudeOAuthLimitsResponse(details *oauthpkg.ClaudeUsageDetails) *ProviderOAuthLimits {
+	if details == nil {
+		return nil
+	}
+	resp := &ProviderOAuthLimits{
+		Primary:   mapProviderClaudeOAuthLimitWindow(details.FiveHour, 5*time.Hour),
+		Secondary: mapProviderClaudeOAuthLimitWindow(details.SevenDay, 7*24*time.Hour),
+	}
+	appendAdditional := func(id string, name string, window *oauthpkg.ClaudeUsageWindow, duration time.Duration) {
+		if mapped := mapProviderClaudeOAuthLimitWindow(window, duration); mapped != nil {
+			resp.Additional = append(resp.Additional, ProviderOAuthAdditionalLimit{
+				LimitID:   id,
+				LimitName: name,
+				Primary:   mapped,
+			})
+		}
+	}
+	appendAdditional("claude_oauth_apps", "OAuth apps", details.SevenDayOAuthApps, 7*24*time.Hour)
+	appendAdditional("claude_opus", "Opus", details.SevenDayOpus, 7*24*time.Hour)
+	appendAdditional("claude_sonnet", "Sonnet", details.SevenDaySonnet, 7*24*time.Hour)
+	if extra := mapProviderClaudeExtraUsageLimitWindow(details.ExtraUsage); extra != nil {
+		resp.Additional = append(resp.Additional, ProviderOAuthAdditionalLimit{
+			LimitID:   "claude_extra_usage",
+			LimitName: "Extra usage",
+			Primary:   extra,
+		})
+	}
+	if resp.Primary == nil && resp.Secondary == nil && len(resp.Additional) == 0 {
+		return nil
+	}
+	return resp
+}
+
+func mapProviderClaudeOAuthLimitWindow(window *oauthpkg.ClaudeUsageWindow, duration time.Duration) *ProviderOAuthLimitWindow {
+	if window == nil {
+		return nil
+	}
+	return &ProviderOAuthLimitWindow{
+		UsedPercent:   window.Utilization,
+		WindowMinutes: int(duration / time.Minute),
+		ResetsAt:      formatTimeRFC3339(window.ResetsAt),
+	}
+}
+
+func mapProviderClaudeExtraUsageLimitWindow(extra *oauthpkg.ClaudeExtraUsage) *ProviderOAuthLimitWindow {
+	if extra == nil || !extra.IsEnabled {
+		return nil
+	}
+	usedPercent := 0.0
+	switch {
+	case extra.Utilization != nil:
+		usedPercent = *extra.Utilization
+	case extra.MonthlyLimit != nil && extra.UsedCredits != nil && *extra.MonthlyLimit > 0:
+		usedPercent = (float64(*extra.UsedCredits) / float64(*extra.MonthlyLimit)) * 100
+	default:
+		return nil
+	}
+	return &ProviderOAuthLimitWindow{UsedPercent: usedPercent}
+}
+
+func claudeOAuthPlanType(svc *oauthpkg.Service, ref string) string {
+	if svc == nil {
+		return ""
+	}
+	cred, err := svc.Load(config.OAuthProviderClaude, ref)
+	if err != nil || cred == nil || cred.Metadata == nil {
+		return ""
+	}
+	return strings.TrimSpace(cred.Metadata["plan_type"])
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func oauthDisplayName(cred *oauthpkg.Credential, provider config.Provider) string {

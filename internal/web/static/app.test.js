@@ -761,6 +761,88 @@ test('loadProviderOAuthMetadata fetches provider-scoped metadata on demand', asy
     assert.equal(state.providerOAuthMetadataButtonLabel(provider), 'Refresh');
 });
 
+test('loadProviderOAuthMetadata supports Claude OAuth providers', async () => {
+    const state = loadApp();
+    const calls = [];
+    const provider = {
+        name: 'claude-sean-example-com',
+        auth_type: 'oauth',
+        oauth_provider: 'claude',
+        oauth_ref: 'claude-sean-example-com'
+    };
+    state.selectedClient = 'claude';
+    state.apiCall = async (url, options, background, suppressAlert) => {
+        calls.push({ url, options, background, suppressAlert });
+        return {
+            oauth_rate_limits: {
+                primary: {
+                    used_percent: 88,
+                    window_minutes: 300,
+                    resets_at: '2026-05-08T13:30:00Z'
+                }
+            }
+        };
+    };
+
+    assert.equal(state.providerSupportsOAuthMetadata(provider), true);
+
+    await state.loadProviderOAuthMetadata(provider);
+
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(calls)),
+        [
+            {
+                url: '/api/providers/claude/claude-sean-example-com/oauth-metadata',
+                options: {},
+                background: true,
+                suppressAlert: true
+            }
+        ]
+    );
+    assert.equal(provider.oauth_rate_limits.primary.used_percent, 88);
+    assert.equal(state.providerHasLoadedOAuthMetadata(provider), true);
+});
+
+test('providerOAuthRateLimitSections localizes Claude additional limit ids', () => {
+    const state = loadApp();
+    state.locale = 'zh-CN';
+    const provider = {
+        auth_type: 'oauth',
+        oauth_provider: 'claude',
+        oauth_rate_limits: {
+            additional: [
+                {
+                    limit_id: 'claude_oauth_apps',
+                    limit_name: 'OAuth apps',
+                    primary: {
+                        used_percent: 15,
+                        window_minutes: 10080,
+                        resets_at: '2026-06-07T05:00:00Z'
+                    }
+                },
+                {
+                    limit_id: 'claude_extra_usage',
+                    limit_name: 'Extra usage',
+                    primary: {
+                        used_percent: 50,
+                        window_minutes: 0
+                    }
+                }
+            ]
+        }
+    };
+
+    const sections = state.providerOAuthRateLimitSections(provider);
+
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(sections.map(section => section.label))),
+        [
+            'OAuth 应用周限额',
+            '额外用量限额'
+        ]
+    );
+});
+
 test('providerOAuthAuthStatusLabel prefers backend status for oauth cards', () => {
     const state = loadApp();
 
